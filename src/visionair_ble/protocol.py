@@ -235,6 +235,7 @@ class DeviceStatus:
     ))
 
 
+
 @dataclass
 class SensorData:
     """Live sensor data from measurement packet (type 0x03).

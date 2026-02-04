@@ -149,6 +149,7 @@ Subscribe by writing `0x0100` to CCCD handle 0x000f.
 | 48 | 1 | Airflow mode | 1=MID/MAX, 2=MIN | ✓ |
 | 49 | 1 | Preheat enabled | `0x02`=ON | ✓ |
 | 50 | 1 | Summer limit enabled | `0x02`=ON | ✓ |
+| **54** | 1 | **Diagnostic status bitfield** | `0x0F`=all OK | ✓ NEW |
 | 56 | 1 | Preheat temperature (°C) | 16 | ✓ |
 
 > **App verification (2026-02):** Equipment Life screen confirmed volume=363m³, operating days=634, filter life=330 days. "Theoretical air flow" shown as 131 m³/h matches LOW mode calculation (363 × 0.36).
@@ -170,6 +171,23 @@ Subscribe by writing `0x0100` to CCCD handle 0x000f.
 | 0 | Probe 2 (Air inlet) |
 | 1 | Probe 1 (Resistor outlet) |
 | 2 | Remote Control |
+
+#### Diagnostic Status Bitfield (byte 54)
+
+The app's Diagnostic screen shows health status for 4 components. Byte 54 appears to be a bitfield encoding these statuses.
+
+**Observed value:** `0x0F` (15) = all 4 bits set, corresponding to 4 checkmarks in the UI.
+
+| Bit | Value | Component (assumed) | Status |
+|-----|-------|---------------------|--------|
+| 0 | 1 | IAQ Sensor | OK when set |
+| 1 | 2 | Motor | OK when set |
+| 2 | 4 | Pre-heating | OK when set |
+| 3 | 8 | Probes | OK when set |
+
+> **⚠️ Unverified bit mapping:** The bit-to-component mapping above is **assumed** based on UI display order. Only one value (0x0F = all healthy) has been observed. To verify which bit corresponds to which component, a device with a faulty component would need to be tested.
+
+> **Verified (2026-02):** Byte 54 = 0x0F when Diagnostic screen shows all 4 checkmarks.
 
 ### History Response (type 0x03)
 
