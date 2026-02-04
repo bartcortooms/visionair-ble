@@ -375,7 +375,7 @@ Extensive testing with different days values on 2026-02-04:
 - Encoding may involve: current date, time of day, device state, or cryptographic elements
 
 **Key findings:**
-- Byte 7 = 0x04 identifies Holiday mode commands (vs 0x00/0x02 for normal settings)
+- Byte 7 = 0x04 identifies Special Mode commands (vs 0x00/0x02 for normal settings)
 - Byte 8 appears to be a sequence counter that increments with each command
 - Bytes 9-10 encode Holiday end date using an undeciphered algorithm
 - Packets are only sent when toggling Holiday ON/OFF, not when editing the days field
@@ -386,6 +386,41 @@ Extensive testing with different days values on 2026-02-04:
 - Check if device stores a base date/counter that affects encoding
 - Look for Holiday mode active indicator in status packet (type 0x01)
 - Consider reverse-engineering the mobile app to find encoding algorithm
+
+### Night Ventilation Boost Mode (Issue #6)
+
+Captured during Night Ventilation toggle testing (2026-02-04).
+
+**Key finding:** Uses the same packet structure as Holiday mode (byte 7 = 0x04), suggesting byte 7 = 0x04 means "Special Mode" command rather than specifically "Holiday mode".
+
+**Captured packet (toggle ON):**
+```
+a5b6 1a 06 06 1a 02 04 12 1e 0b 01
+                   ^^ ^^ ^^ ^^ ^^
+                   |  |  |  |  checksum
+                   |  |  |  byte10=11
+                   |  |  byte9=30
+                   |  sequence=18
+                   special_mode_flag
+```
+
+**Observations:**
+- Byte 7 = 0x04 (same as Holiday mode - "Special Mode" flag)
+- Byte 8 = sequence counter (continues from previous commands)
+- Bytes 9-10 = (30, 11) - encoding unclear, possibly temperature thresholds
+- Only ONE packet captured when toggling OFF→ON (toggle OFF may not send a SETTINGS packet)
+
+**Related queries observed:**
+```
+a5b61006051a0000000009  - Base special modes query
+a5b61006051a000000050c  - Extended query (byte8=5)
+a5b61006051a0000000a03  - Extended query (byte8=10)
+```
+
+**Needs further research:**
+- Decode bytes 9-10 meaning (possibly indoor/outdoor temp thresholds)
+- Capture toggle OFF packet separately
+- Test with different temperature settings if configurable
 
 ## References
 
