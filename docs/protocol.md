@@ -308,6 +308,33 @@ From the app's "Equipment Life" screen:
 
 > **Research opportunity:** Capturing packets while using time slot scheduling, holiday mode, or diagnostic features would help decode the remaining protocol.
 
+### Holiday Mode (Partial - Issue #3)
+
+Captured during Holiday mode toggle testing (2026-02-04):
+
+**New query command discovered:**
+```
+a5b6 10 06 05 2c 00 00 00 00 3f
+          ^^ param 0x2c (44)
+```
+This query with parameter 0x2c appears when interacting with Holiday mode. Likely fetches Holiday mode status/schedule.
+
+**Settings packet with unusual byte 7:**
+```
+a5b6 1a 06 06 1a 02 04 0b 1b 30 26
+                   ^^ byte 7 = 0x04 (unusual)
+```
+Normal byte 7 values are 0x00 (summer limit OFF) or 0x02 (summer limit ON). The value 0x04 may indicate Holiday mode enabled, or a combination flag.
+
+**Status byte changes observed:**
+- Byte 57: Changes when Holiday mode is toggled (28 → 11 in one capture)
+- This byte previously noted as "varies with sensor" - may also be affected by Holiday mode
+
+**Needs further research:**
+- Capture separate ON and OFF commands to identify the enable/disable mechanism
+- Determine if 0x2c query is for reading Holiday status or setting it
+- Clarify relationship between Settings byte 7 = 0x04 and Holiday mode
+
 ## References
 
 - [Infineon AN91162 - Creating a BLE Custom Profile](https://www.infineon.com/dgdl/Infineon-AN91162_Creating_a_BLE_Custom_Profile-ApplicationNotes-v05_00-EN.pdf)
