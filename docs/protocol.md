@@ -189,6 +189,44 @@ The app's Diagnostic screen shows health status for 4 components. Byte 54 appear
 
 > **Verified (2026-02):** Byte 54 = 0x0F when Diagnostic screen shows all 4 checkmarks.
 
+### Schedule Response (type 0x02)
+
+The SCHEDULE packet reports **current time** and schedule state, not the schedule configuration itself.
+
+**Structure (182 bytes):**
+
+| Offset | Size | Description | Verified |
+|--------|------|-------------|----------|
+| 0-1 | 2 | Magic `a5b6` | ✓ |
+| 2 | 1 | Type `0x02` | ✓ |
+| 4-7 | 4 | Device ID (LE) | ✓ |
+| 8-9 | 2 | Config flags? `0x04 0x01` | ? |
+| 10 | 1 | Mode? `0x03` | ? |
+| 11 | 1 | **Current hour** (0-23) | ✓ |
+| 12 | 1 | Unknown `0x00` | |
+| 13 | 1 | **Current minute** (0-59) | ✓ |
+| 14 | 1 | Unknown `0x00` | |
+| 15 | 1 | Days bitmask? `0xff` = all days | ? |
+| 16+ | - | 11-byte repeating blocks with `0xff` markers | |
+
+**Observations:**
+- Bytes 11 and 13 increment with real time (confirmed hour:minute correlation)
+- `0xff` markers appear every 11 bytes starting at byte 15
+- Most data is zeros, suggesting default/inactive schedule slots
+- The **actual schedule configuration** (24 hourly slots) is stored on device
+
+**Time Slot Configuration (from app UI):**
+
+The VMI+ app shows "Time slot configuration" with:
+- 24 hourly slots (0h-23h)
+- Each slot has: **Preheat temp** (°C) and **Mode** (1/2/3 = airflow level)
+- Per-day configuration or default ("Day (fault)")
+- "Activating time slots" toggle to enable/disable scheduling
+
+Typical schedule pattern observed:
+- Mode 1 (LOW): 0h-8h and 18h-23h (night/evening)
+- Mode 2 (MEDIUM): 9h-17h (daytime)
+
 ### History Response (type 0x03)
 
 | Offset | Size | Description |
