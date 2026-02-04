@@ -359,33 +359,50 @@ Structure: a5b6 1a 06 06 1a <preheat> 04 <b8> <b9> <b10> <checksum>
 
 Extensive testing with different days values on 2026-02-04:
 
-| Days | Byte 9 | Byte 10 | End Date | B9+B10 | Full Packet |
-|------|--------|---------|----------|--------|-------------|
-| 5    | 13     | 26      | Feb 9    | 39     | `a5b61a06061a02040d0d1a1c` |
-| 7    | 24     | 33      | Feb 11   | 57     | `a5b61a06061a02040d182132` |
-| 10   | 49     | 59      | Feb 14   | 108    | `a5b61a06061a02040d313b01` |
-| 14   | 40     | 6       | Feb 18   | 46     | `a5b61a06061a02040d280625` |
-| 25   | 17     | 31      | Mar 1    | 48     | `a5b61a06061a02040d111f05` |
+| Time | Days | Byte 9 | Byte 10 | End Date | Full Packet |
+|------|------|--------|---------|----------|-------------|
+| ~17:00 | 5 | 13 | 26 | Feb 9 | `a5b61a06061a02040d0d1a1c` |
+| ~17:00 | 7 | 24 | 33 | Feb 11 | `a5b61a06061a02040d182132` |
+| ~17:00 | 10 | 49 | 59 | Feb 14 | `a5b61a06061a02040d313b01` |
+| ~17:00 | 14 | 40 | 6 | Feb 18 | `a5b61a06061a02040d280625` |
+| ~17:00 | 25 | 17 | 31 | Mar 1 | `a5b61a06061a02040d111f05` |
+| 19:44 | 5 | 41 | 21 | Feb 9 | `a5b61a06061a020413291529` |
+| 19:47 | 7 | 45 | 56 | Feb 11 | `a5b61a06061a0204132d3800` |
+
+**Key discovery: Time-dependent encoding**
+
+The same "days" value produces **different byte 9-10 values at different times**:
+
+| Days | End Date | Earlier (~17:00) | Later (19:44-47) |
+|------|----------|------------------|------------------|
+| 5 | Feb 9 | (13, 26) | (41, 21) |
+| 7 | Feb 11 | (24, 33) | (45, 56) |
+
+This confirms bytes 9-10 encode an **end timestamp**, not just the number of days.
 
 **Encoding analysis:**
-- No linear relationship: bytes don't simply encode days or end date
-- Not standard BCD: some hex values have invalid BCD digits (A-F in low nibble)
-- Not day-of-year: byte values don't match end dates' day-of-year numbers
-- Sums (B9+B10) don't correlate with days or end dates
-- Encoding may involve: current date, time of day, device state, or cryptographic elements
+- **Time-dependent**: Same days value → different bytes at different capture times
+- **Likely encodes end timestamp**: App probably calculates `current_time + days` and encodes that
+- **Unknown transformation**: The encoding uses some algorithm we haven't deciphered
+- Not simple day-of-year + hour (offsets don't match consistently)
+- Not linear offset based on time elapsed
+- May involve device-specific key or rolling counter
 
 **Key findings:**
 - Byte 7 = 0x04 identifies Special Mode commands (vs 0x00/0x02 for normal settings)
-- Byte 8 appears to be a sequence counter that increments with each command
-- Bytes 9-10 encode Holiday end date using an undeciphered algorithm
-- Packets are only sent when toggling Holiday ON/OFF, not when editing the days field
-- The encoding is likely designed to prevent simple replay attacks or requires device-specific context
+- Byte 8 = sequence counter that increments with each command
+- Bytes 9-10 = **time-dependent encoding of Holiday end timestamp**
+- Packets are only sent when toggling Holiday ON, not when editing the days field
 
-**Needs further research:**
-- Capture packets at different times of day to check for time-dependency
-- Check if device stores a base date/counter that affects encoding
-- Look for Holiday mode active indicator in status packet (type 0x01)
-- Consider reverse-engineering the mobile app to find encoding algorithm
+**Hypotheses for encoding algorithm:**
+1. App sends end timestamp (current time + days) encoded with unknown transformation
+2. Encoding may use device time, session key, or rolling counter
+3. The VMI device likely has a clock (needed for schedules) and decodes this to an absolute end time
+
+**Status:** Encoding algorithm unknown. Generating valid packets requires either:
+- Reverse-engineering the mobile app (legal concerns)
+- More data points to find the pattern
+- Intercepting and replaying recent packets (time-limited validity)
 
 ### Night Ventilation Boost Mode (Issue #6)
 
