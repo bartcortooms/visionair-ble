@@ -4,7 +4,16 @@
 
 set -e
 
-# ADB target (can be set via VMI_ADB_TARGET env var)
+# Find and source .env file from project root
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+if [[ -f "$PROJECT_ROOT/.env" ]]; then
+    set -a
+    source "$PROJECT_ROOT/.env"
+    set +a
+fi
+
+# ADB target (can be set via VMI_ADB_TARGET env var or .env file)
 ADB_TARGET="${VMI_ADB_TARGET:-}"
 adb_cmd() {
     if [[ -n "$ADB_TARGET" ]]; then
@@ -357,6 +366,92 @@ start_btsnoop() {
     echo "Without this, you'll get btsnooz (truncated) instead of btsnoop (full)."
 }
 
+enable_btsnoop_full() {
+    echo "Enabling FULL Bluetooth HCI snoop logging via Developer Options..."
+    echo "Opening Developer Options..."
+    adb_cmd shell am start -a android.settings.APPLICATION_DEVELOPMENT_SETTINGS
+    sleep 2
+
+    # Find and tap "Enable Bluetooth HCI snoop log"
+    echo "Looking for BT snoop log setting..."
+    local max_scrolls=5
+    local found=0
+
+    for i in $(seq 1 $max_scrolls); do
+        # Dump UI and check for the setting
+        adb_cmd shell uiautomator dump 2>/dev/null
+        local xml=$(adb_cmd shell cat /sdcard/window_dump.xml 2>/dev/null)
+
+        if echo "$xml" | grep -q "Enable Bluetooth HCI snoop log"; then
+            found=1
+            break
+        fi
+        # Scroll down
+        adb_cmd shell input swipe 500 1500 500 800 300
+        sleep 1
+    done
+
+    if [[ $found -eq 0 ]]; then
+        echo "ERROR: Could not find 'Enable Bluetooth HCI snoop log' setting"
+        return 1
+    fi
+
+    # Get the bounds of the setting
+    local bounds=$(echo "$xml" | grep -o 'text="Enable Bluetooth HCI snoop log"[^>]*bounds="\[[0-9,]*\]\[[0-9,]*\]"' | grep -o 'bounds="\[[0-9,]*\]\[[0-9,]*\]"' | head -1)
+
+    if [[ -z "$bounds" ]]; then
+        echo "ERROR: Could not find bounds for BT snoop setting"
+        return 1
+    fi
+
+    # Parse bounds and calculate center
+    local coords=$(echo "$bounds" | sed 's/bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]"/\1 \2 \3 \4/')
+    local x1=$(echo $coords | cut -d' ' -f1)
+    local y1=$(echo $coords | cut -d' ' -f2)
+    local x2=$(echo $coords | cut -d' ' -f3)
+    local y2=$(echo $coords | cut -d' ' -f4)
+    local cx=$(( (x1 + x2) / 2 ))
+    local cy=$(( (y1 + y2) / 2 ))
+
+    echo "Tapping BT snoop setting at ($cx, $cy)..."
+    adb_cmd shell input tap $cx $cy
+    sleep 1
+
+    # Now find and tap "Enabled" (not filtered) in the dialog
+    adb_cmd shell uiautomator dump 2>/dev/null
+    xml=$(adb_cmd shell cat /sdcard/window_dump.xml 2>/dev/null)
+
+    # Find the "Enabled" option (exact match, not "Enabled Filtered")
+    bounds=$(echo "$xml" | grep -o 'text="Enabled"[^>]*bounds="\[[0-9,]*\]\[[0-9,]*\]"' | grep -o 'bounds="\[[0-9,]*\]\[[0-9,]*\]"' | head -1)
+
+    if [[ -z "$bounds" ]]; then
+        echo "ERROR: Could not find 'Enabled' option in dialog"
+        return 1
+    fi
+
+    coords=$(echo "$bounds" | sed 's/bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]"/\1 \2 \3 \4/')
+    x1=$(echo $coords | cut -d' ' -f1)
+    y1=$(echo $coords | cut -d' ' -f2)
+    x2=$(echo $coords | cut -d' ' -f3)
+    y2=$(echo $coords | cut -d' ' -f4)
+    cx=$(( (x1 + x2) / 2 ))
+    cy=$(( (y1 + y2) / 2 ))
+
+    echo "Selecting 'Enabled' at ($cx, $cy)..."
+    adb_cmd shell input tap $cx $cy
+    sleep 1
+
+    # Toggle Bluetooth to apply setting
+    echo "Toggling Bluetooth to apply setting..."
+    adb_cmd shell svc bluetooth disable
+    sleep 2
+    adb_cmd shell svc bluetooth enable
+    sleep 3
+
+    echo "BT snoop logging enabled (full mode). Ready for capture."
+    adb_cmd shell input keyevent KEYCODE_HOME
+}
+
 pull_btsnoop() {
     echo "Pulling Bluetooth snoop logs via bugreport..."
     mkdir -p /tmp/vmi_btlogs
@@ -420,6 +515,7 @@ case "${1:-help}" in
     scroll)     scroll_down ;;
     ui)         ui_dump ;;
     btstart)    start_btsnoop ;;
+    btsnoop-enable) enable_btsnoop_full ;;
     btpull)     pull_btsnoop ;;
     connect)    full_connect_sequence ;;
     fan-min)    tap_fan_min ;;
@@ -480,7 +576,8 @@ case "${1:-help}" in
         echo "  resolution  - Show detected resolution"
         echo ""
         echo "Bluetooth:"
-        echo "  btstart     - Enable BT snoop logging"
+        echo "  btsnoop-enable - Enable FULL BT snoop logging (via Developer Options)"
+        echo "  btstart     - Enable BT snoop logging (via settings command only)"
         echo "  btpull      - Pull BT snoop logs"
         ;;
 esac

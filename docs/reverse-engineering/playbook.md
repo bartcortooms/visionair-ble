@@ -18,6 +18,34 @@ cp .env.example .env
 # Edit .env with your device MAC, phone IP, etc.
 ```
 
+## Enabling Bluetooth HCI Snoop Logging
+
+**IMPORTANT:** For full packet captures, you must enable BT snoop logging in Developer Options with the correct mode. The `settings` command alone is not sufficient.
+
+### Automated Setup
+
+Run the following command to enable full BT snoop logging:
+
+```bash
+./scripts/capture/app_control.sh btsnoop-enable
+```
+
+This will:
+1. Open Developer Options
+2. Enable "Bluetooth HCI snoop log" with **"Enabled"** mode (not filtered)
+3. Toggle Bluetooth off/on to apply the setting
+
+### Manual Verification
+
+If the automated command fails, verify manually:
+
+1. Open **Settings → Developer Options**
+2. Find **"Enable Bluetooth HCI snoop log"**
+3. Select **"Enabled"** (NOT "Disabled", "Enabled Filtered", or other filtered modes)
+4. Toggle Bluetooth off and on
+
+**Note:** Without the correct mode, you'll get `btsnooz` format (truncated/filtered) instead of full `btsnoop` captures.
+
 ## Capture Discipline (Critical)
 
 Each test run must have **one UI change only**.
