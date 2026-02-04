@@ -384,50 +384,82 @@ Analysis of 14 captured packets revealed that bytes 8-9-10 directly encode the *
 - All byte 9 values are valid minutes (0-59)
 - All byte 10 values are valid seconds (0-59)
 
-**Missing piece: The DATE encoding**
+**🔓 DAYS VALUE ENCODING FOUND: Query 0x1a with byte 9 = days**
 
-The HH:MM:SS is clear, but **how is the DATE encoded?** Options:
+The "days" value is sent separately via **query 0x1a** before the Settings command:
 
-1. **Embedded elsewhere** - Date may be in the query (0x2c) or a separate packet
-2. **Implicit from days** - Device calculates: current_date + days_setting
-3. **Different packet** - A separate packet carries the date before the time packet
-
-Since the same "5 days" setting at different capture times produces different HH:MM:SS values matching the capture time, the encoding is:
 ```
-End time = capture_time + N_days (date implicit from days UI setting)
+Query 0x1a - Set Holiday Days:
+a5b6 10 06 05 1a 00 00 00 <days> <checksum>
+                         ^^^^^ byte 9 = number of days
 ```
+
+**Captured days queries:**
+
+| Days | Query Packet | Checksum |
+|------|--------------|----------|
+| 3 | `a5b61006051a000000030a` | 0x0a |
+| 5 | `a5b61006051a000000050c` | 0x0c |
+| 7 | `a5b61006051a000000070e` | 0x0e |
+| 10 | `a5b61006051a0000000a03` | 0x03 |
+| 14 | `a5b61006051a0000000e07` | 0x07 |
+| 15 | `a5b61006051a0000000f06` | 0x06 |
+| 25 | `a5b61006051a0000001910` | 0x10 |
+
+**Complete Holiday Mode Activation Sequence:**
+
+1. **Query 0x1a with days** - Sent when user adjusts the days slider
+   ```
+   a5b61006051a000000<days><checksum>
+   ```
+
+2. **Settings command with HH:MM:SS** - Sent when user toggles Holiday ON
+   ```
+   a5b61a06061a02 04 <hour> <min> <sec> <checksum>
+   ```
 
 **Key findings:**
 - Byte 7 = 0x04 identifies Special Mode commands (vs 0x00/0x02 for normal settings)
 - Bytes 8-9-10 = **end time in HH:MM:SS format** (the time of day Holiday ends)
-- The **date** (which day it ends) is implicit - device uses current date + configured days
-- Packets are only sent when toggling Holiday ON, not when editing the days field
+- Days value sent separately via query 0x1a (byte 9)
+- Query 0x1a can be sent multiple times as user adjusts slider
+- Settings command only sent when user toggles Holiday ON
 
 **Implementation:**
 
-To build a Holiday mode packet:
 ```python
 from datetime import datetime, timedelta
 
-def build_holiday_packet(days: int, preheat_enabled: bool = True) -> bytes:
-    """Build Holiday mode command for N days from now."""
-    end_time = datetime.now() + timedelta(days=days)
+def calc_checksum(payload: bytes) -> int:
+    result = 0
+    for b in payload:
+        result ^= b
+    return result
 
+def build_holiday_days_query(days: int) -> bytes:
+    """Build query to set Holiday mode days."""
+    payload = bytes([0x10, 0x06, 0x05, 0x1a, 0x00, 0x00, 0x00, days])
+    return b'\xa5\xb6' + payload + bytes([calc_checksum(payload)])
+
+def build_holiday_activate(preheat_enabled: bool = True) -> bytes:
+    """Build Holiday mode activation command (uses current time)."""
+    now = datetime.now()
     payload = bytes([
         0x1a, 0x06, 0x06, 0x1a,
         0x02 if preheat_enabled else 0x00,  # byte 6: preheat
         0x04,                                # byte 7: Special Mode
-        end_time.hour,                       # byte 8: end hour
-        end_time.minute,                     # byte 9: end minute
-        end_time.second,                     # byte 10: end second
+        now.hour,                            # byte 8: current hour
+        now.minute,                          # byte 9: current minute
+        now.second,                          # byte 10: current second
     ])
-    checksum = 0
-    for b in payload:
-        checksum ^= b
-    return b'\xa5\xb6' + payload + bytes([checksum])
+    return b'\xa5\xb6' + payload + bytes([calc_checksum(payload)])
+
+# Usage:
+# 1. Send days query: build_holiday_days_query(7)  # 7 days
+# 2. Send activation: build_holiday_activate()      # activates with current time
 ```
 
-**Status:** ✅ **ENCODING DECODED** - Ready for implementation and testing
+**Status:** ✅ **FULLY DECODED** - Days via query 0x1a, activation via Settings 0x04
 
 ### Night Ventilation Boost Mode (Issue #6)
 
