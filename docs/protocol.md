@@ -325,29 +325,40 @@ Sent before each Holiday mode toggle. Returns type 0x50 response.
 
 **Holiday Mode Settings Command (byte 7 = 0x04):**
 ```
-Structure: a5b6 1a 06 06 1a <preheat> 04 <days?> <p1> <p2> <checksum>
-                            ^^^^^^^^ ^^ ^^^^^^^ ^^^^^^^^
-                            byte6    byte7=0x04  parameters
+Structure: a5b6 1a 06 06 1a <preheat> 04 <b8> <b9> <b10> <checksum>
+                            ^^^^^^^^ ^^ ^^^^ ^^^^^ ^^^^^
+                            byte6    byte7   encoded parameters
 ```
 
-| Field | Holiday ON | Holiday OFF | Notes |
-|-------|------------|-------------|-------|
-| Byte 6 | 0x02 | 0x02 | Preheat enabled |
-| Byte 7 | **0x04** | **0x04** | Holiday mode command type |
-| Byte 8 | 0x0b (11) | 0x0c (12) | Duration in days? |
-| Byte 9 | 0x1b (27) | 0x2a (42) | Unknown parameter |
-| Byte 10 | 0x30 (48) | 0x1e (30) | Unknown parameter |
+| Field | Description |
+|-------|-------------|
+| Byte 6 | Preheat enabled: `0x02`=ON |
+| Byte 7 | **0x04** = Holiday mode command type |
+| Byte 8 | Sequence counter (increments: 11→12→13...), NOT days directly |
+| Bytes 9-10 | Encoded holiday parameters (see table below) |
 
-**Captured packets:**
-- Holiday ON:  `a5b61a06061a02040b1b3026`
-- Holiday OFF: `a5b61a06061a02040c2a1e3e`
+**Days value encoding (bytes 9-10):**
 
-**Key insight:** Byte 7 = 0x04 identifies Holiday mode commands (vs normal settings where byte 7 is 0x00 or 0x02 for summer limit). The actual ON/OFF state appears to be encoded in bytes 8-10.
+Testing with different days values on 2026-02-04:
+
+| Days | Byte 9 | Byte 10 | Full Packet |
+|------|--------|---------|-------------|
+| 5    | 13     | 26      | `a5b61a06061a02040d0d1a1c` |
+| 7    | 24     | 33      | `a5b61a06061a02040d182132` |
+| 25   | 17     | 31      | `a5b61a06061a02040d111f05` |
+
+> **Note:** The encoding appears complex - possibly involving the current date or other factors. No simple linear relationship found between days and byte values.
+
+**Key findings:**
+- Byte 7 = 0x04 identifies Holiday mode commands (vs 0x00/0x02 for normal settings)
+- Byte 8 is NOT the days value - it's a sequence counter that increments
+- The days value is encoded in bytes 9-10 using an unknown algorithm
+- Packets are only sent when toggling Holiday ON/OFF, not when editing the days field
 
 **Needs further research:**
-- Determine exact meaning of bytes 8-10 (days duration, mode flags?)
-- Test with explicit days values to confirm byte 8 = days
-- Find Holiday mode indicator in status packet
+- Decode the bytes 9-10 encoding algorithm (may involve current date)
+- Find Holiday mode active indicator in status packet (type 0x01)
+- Test edge cases (1 day, 30 days, etc.) to find encoding pattern
 
 ## References
 

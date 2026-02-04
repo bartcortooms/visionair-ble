@@ -70,6 +70,10 @@ get_coords() {
                 sensor_probe1)  echo "540 800" ;;
                 sensor_probe2)  echo "540 990" ;;
                 sensor_remote)  echo "540 1270" ;;
+                # Holiday mode (Special modes screen)
+                holiday_card)   echo "540 738" ;;
+                holiday_toggle) echo "868 738" ;;
+                holiday_days)   echo "540 1038" ;;
             esac
             ;;
         1116x2484|*)
@@ -97,6 +101,10 @@ get_coords() {
                 sensor_probe1)  echo "558 850" ;;
                 sensor_probe2)  echo "558 1050" ;;
                 sensor_remote)  echo "558 1350" ;;
+                # Holiday mode (Special modes screen) - TODO: verify coords
+                holiday_card)   echo "558 784" ;;
+                holiday_toggle) echo "896 784" ;;
+                holiday_days)   echo "558 1100" ;;
             esac
             ;;
     esac
@@ -287,6 +295,91 @@ tap_sensor_remote() {
     tap_func sensor_remote
     sleep 2
     screenshot /tmp/vmi_sensor_remote.png
+}
+
+# Holiday mode functions
+goto_special_modes_full() {
+    echo "Navigating: Home → Menu → Configuration → Special modes"
+    echo "Step 1/3: Opening menu..."
+    tap_func menu
+    sleep 2
+    echo "Step 2/3: Going to Configuration..."
+    tap_func config
+    sleep 2
+    echo "Step 3/3: Scrolling and tapping Special modes..."
+    scroll_down
+    tap_func special_modes
+    sleep 2
+    screenshot /tmp/vmi_special_modes.png
+    echo "Done! At Special Modes screen."
+}
+
+holiday_toggle() {
+    echo "Toggling Holiday mode..."
+    tap_func holiday_toggle
+    sleep 3
+    screenshot /tmp/vmi_holiday_toggled.png
+}
+
+holiday_set_days() {
+    local days="${1:-5}"
+    echo "Setting Holiday mode days to $days..."
+    # Tap on the days field
+    tap_func holiday_days
+    sleep 1
+    # Clear existing text and enter new value
+    adb_cmd shell "input keyevent KEYCODE_MOVE_END"
+    adb_cmd shell "input keyevent --longpress KEYCODE_DEL"
+    sleep 0.5
+    adb_cmd shell "input text '$days'"
+    adb_cmd shell "input keyevent KEYCODE_ENTER"
+    sleep 2
+    screenshot /tmp/vmi_holiday_days_${days}.png
+    echo "Days set to $days"
+}
+
+holiday_capture_test() {
+    local days="${1:-5}"
+    echo "=== Holiday Mode Capture Test (days=$days) ==="
+    echo ""
+    echo "Step 1: Reset BT snoop log..."
+    adb_cmd shell svc bluetooth disable
+    sleep 2
+    adb_cmd shell svc bluetooth enable
+    sleep 5
+    echo "BT reset complete."
+    echo ""
+    echo "Step 2: Connect to device..."
+    full_connect_sequence
+    sleep 3
+    echo ""
+    echo "Step 3: Navigate to Special Modes..."
+    goto_special_modes_full
+    echo ""
+    echo "Step 4: Turn Holiday OFF (ensure clean state)..."
+    # Check current state via UI dump
+    adb_cmd shell uiautomator dump 2>/dev/null
+    local xml=$(adb_cmd shell cat /sdcard/window_dump.xml 2>/dev/null)
+    if echo "$xml" | grep -q 'content-desc="ON".*Holiday' || echo "$xml" | grep -q 'Holiday.*content-desc="ON"'; then
+        echo "Holiday is ON, turning OFF first..."
+        holiday_toggle
+        sleep 3
+    fi
+    echo ""
+    echo "Step 5: Turn Holiday ON with $days days..."
+    holiday_toggle
+    sleep 2
+    # Set days value
+    holiday_set_days "$days"
+    echo ""
+    echo "Step 6: Wait for BLE packet to be sent..."
+    sleep 5
+    echo ""
+    echo "Step 7: Pull btsnoop log..."
+    pull_btsnoop
+    echo ""
+    echo "=== Capture complete! ==="
+    echo "Analyze packets with: python scripts/capture/extract_packets.py /tmp/vmi_btlogs/btsnoop_*.log"
 }
 
 tap_fan_min() {
@@ -506,6 +599,10 @@ case "${1:-help}" in
     measurements-full) goto_measurements_full ;;
     diagnostic) goto_diagnostic ;;
     special-modes) goto_special_modes ;;
+    special-modes-full) goto_special_modes_full ;;
+    holiday-toggle) holiday_toggle ;;
+    holiday-days) holiday_set_days "$2" ;;
+    holiday-test) holiday_capture_test "$2" ;;
     time-slots) goto_time_slots ;;
     sensor-probe1) tap_sensor_probe1 ;;
     sensor-probe2) tap_sensor_probe2 ;;
@@ -556,6 +653,15 @@ case "${1:-help}" in
         echo "  measurements    - Available info -> Instantaneous measurements"
         echo "  measurements-full - Full navigation from home to measurements"
         echo "  diagnostic  - Available info -> Diagnostic"
+        echo ""
+        echo "Navigation (Configuration -> Special modes):"
+        echo "  special-modes      - Tap Special modes (assumes already in Configuration)"
+        echo "  special-modes-full - Full navigation from home to Special modes"
+        echo ""
+        echo "Holiday mode (from Special modes screen):"
+        echo "  holiday-toggle     - Toggle Holiday mode ON/OFF"
+        echo "  holiday-days <n>   - Set Holiday mode days (e.g., holiday-days 5)"
+        echo "  holiday-test [n]   - Full capture test: reset BT, set n days, toggle, pull logs"
         echo ""
         echo "Fan speed (from home screen):"
         echo "  fan-min     - Set fan to MIN"
