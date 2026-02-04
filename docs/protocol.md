@@ -410,17 +410,42 @@ a5b6 1a 06 06 1a 02 04 12 1e 0b 01
 - Bytes 9-10 = (30, 11) - encoding unclear, possibly temperature thresholds
 - Only ONE packet captured when toggling OFF→ON (toggle OFF may not send a SETTINGS packet)
 
+### Fixed Air Flow Rate Mode (Issue #7)
+
+Captured during Fixed Air Flow toggle testing (2026-02-04).
+
+**Captured packet (toggle ON):**
+```
+a5b6 1a 06 06 1a 02 04 13 21 33 07
+                   ^^ ^^ ^^ ^^ ^^
+                   |  |  |  |  checksum
+                   |  |  |  byte10=51
+                   |  |  byte9=33
+                   |  sequence=19
+                   special_mode_flag
+```
+
+### Special Mode Packets Summary
+
+All special modes use byte 7 = 0x04 with different byte 9-10 values:
+
+| Mode | Seq | Byte 9 | Byte 10 | Full Packet |
+|------|-----|--------|---------|-------------|
+| Night Ventilation ON | 18 | 30 (0x1e) | 11 (0x0b) | `a5b61a06061a0204121e0b01` |
+| Fixed Air Flow ON | 19 | 33 (0x21) | 51 (0x33) | `a5b61a06061a020413213307` |
+
 **Related queries observed:**
 ```
 a5b61006051a0000000009  - Base special modes query
 a5b61006051a000000050c  - Extended query (byte8=5)
 a5b61006051a0000000a03  - Extended query (byte8=10)
+a5b61006051b0000000109  - Query 0x1b (possibly fixed airflow specific)
 ```
 
 **Needs further research:**
-- Decode bytes 9-10 meaning (possibly indoor/outdoor temp thresholds)
-- Capture toggle OFF packet separately
-- Test with different temperature settings if configurable
+- Decode bytes 9-10 meaning for each mode
+- Identify how to turn modes OFF (toggle OFF may use different packet or just query)
+- Test with different settings if configurable
 
 ## References
 
