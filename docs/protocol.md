@@ -339,26 +339,35 @@ Structure: a5b6 1a 06 06 1a <preheat> 04 <b8> <b9> <b10> <checksum>
 
 **Days value encoding (bytes 9-10):**
 
-Testing with different days values on 2026-02-04:
+Extensive testing with different days values on 2026-02-04:
 
-| Days | Byte 9 | Byte 10 | Full Packet |
-|------|--------|---------|-------------|
-| 5    | 13     | 26      | `a5b61a06061a02040d0d1a1c` |
-| 7    | 24     | 33      | `a5b61a06061a02040d182132` |
-| 25   | 17     | 31      | `a5b61a06061a02040d111f05` |
+| Days | Byte 9 | Byte 10 | End Date | B9+B10 | Full Packet |
+|------|--------|---------|----------|--------|-------------|
+| 5    | 13     | 26      | Feb 9    | 39     | `a5b61a06061a02040d0d1a1c` |
+| 7    | 24     | 33      | Feb 11   | 57     | `a5b61a06061a02040d182132` |
+| 10   | 49     | 59      | Feb 14   | 108    | `a5b61a06061a02040d313b01` |
+| 14   | 40     | 6       | Feb 18   | 46     | `a5b61a06061a02040d280625` |
+| 25   | 17     | 31      | Mar 1    | 48     | `a5b61a06061a02040d111f05` |
 
-> **Note:** The encoding appears complex - possibly involving the current date or other factors. No simple linear relationship found between days and byte values.
+**Encoding analysis:**
+- No linear relationship: bytes don't simply encode days or end date
+- Not standard BCD: some hex values have invalid BCD digits (A-F in low nibble)
+- Not day-of-year: byte values don't match end dates' day-of-year numbers
+- Sums (B9+B10) don't correlate with days or end dates
+- Encoding may involve: current date, time of day, device state, or cryptographic elements
 
 **Key findings:**
 - Byte 7 = 0x04 identifies Holiday mode commands (vs 0x00/0x02 for normal settings)
-- Byte 8 is NOT the days value - it's a sequence counter that increments
-- The days value is encoded in bytes 9-10 using an unknown algorithm
+- Byte 8 appears to be a sequence counter that increments with each command
+- Bytes 9-10 encode Holiday end date using an undeciphered algorithm
 - Packets are only sent when toggling Holiday ON/OFF, not when editing the days field
+- The encoding is likely designed to prevent simple replay attacks or requires device-specific context
 
 **Needs further research:**
-- Decode the bytes 9-10 encoding algorithm (may involve current date)
-- Find Holiday mode active indicator in status packet (type 0x01)
-- Test edge cases (1 day, 30 days, etc.) to find encoding pattern
+- Capture packets at different times of day to check for time-dependency
+- Check if device stores a base date/counter that affects encoding
+- Look for Holiday mode active indicator in status packet (type 0x01)
+- Consider reverse-engineering the mobile app to find encoding algorithm
 
 ## References
 
