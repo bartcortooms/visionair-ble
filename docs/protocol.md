@@ -308,32 +308,46 @@ From the app's "Equipment Life" screen:
 
 > **Research opportunity:** Capturing packets while using time slot scheduling, holiday mode, or diagnostic features would help decode the remaining protocol.
 
-### Holiday Mode (Partial - Issue #3)
+### Holiday Mode (Issue #3)
 
-Captured during Holiday mode toggle testing (2026-02-04):
+Captured during Holiday mode toggle testing (2026-02-04).
 
-**New query command discovered:**
+**Command sequence for Holiday mode toggle:**
+1. Query 0x2c is sent first (fetch Holiday status)
+2. Settings packet with byte 7 = 0x04 (Holiday mode command)
+
+**Query 0x2c - Holiday Status Request:**
 ```
 a5b6 10 06 05 2c 00 00 00 00 3f
-          ^^ param 0x2c (44)
+             ^^ param 0x2c (44)
 ```
-This query with parameter 0x2c appears when interacting with Holiday mode. Likely fetches Holiday mode status/schedule.
+Sent before each Holiday mode toggle. Returns type 0x50 response.
 
-**Settings packet with unusual byte 7:**
+**Holiday Mode Settings Command (byte 7 = 0x04):**
 ```
-a5b6 1a 06 06 1a 02 04 0b 1b 30 26
-                   ^^ byte 7 = 0x04 (unusual)
+Structure: a5b6 1a 06 06 1a <preheat> 04 <days?> <p1> <p2> <checksum>
+                            ^^^^^^^^ ^^ ^^^^^^^ ^^^^^^^^
+                            byte6    byte7=0x04  parameters
 ```
-Normal byte 7 values are 0x00 (summer limit OFF) or 0x02 (summer limit ON). The value 0x04 may indicate Holiday mode enabled, or a combination flag.
 
-**Status byte changes observed:**
-- Byte 57: Changes when Holiday mode is toggled (28 → 11 in one capture)
-- This byte previously noted as "varies with sensor" - may also be affected by Holiday mode
+| Field | Holiday ON | Holiday OFF | Notes |
+|-------|------------|-------------|-------|
+| Byte 6 | 0x02 | 0x02 | Preheat enabled |
+| Byte 7 | **0x04** | **0x04** | Holiday mode command type |
+| Byte 8 | 0x0b (11) | 0x0c (12) | Duration in days? |
+| Byte 9 | 0x1b (27) | 0x2a (42) | Unknown parameter |
+| Byte 10 | 0x30 (48) | 0x1e (30) | Unknown parameter |
+
+**Captured packets:**
+- Holiday ON:  `a5b61a06061a02040b1b3026`
+- Holiday OFF: `a5b61a06061a02040c2a1e3e`
+
+**Key insight:** Byte 7 = 0x04 identifies Holiday mode commands (vs normal settings where byte 7 is 0x00 or 0x02 for summer limit). The actual ON/OFF state appears to be encoded in bytes 8-10.
 
 **Needs further research:**
-- Capture separate ON and OFF commands to identify the enable/disable mechanism
-- Determine if 0x2c query is for reading Holiday status or setting it
-- Clarify relationship between Settings byte 7 = 0x04 and Holiday mode
+- Determine exact meaning of bytes 8-10 (days duration, mode flags?)
+- Test with explicit days values to confirm byte 8 = days
+- Find Holiday mode indicator in status packet
 
 ## References
 
