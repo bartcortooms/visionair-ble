@@ -8,7 +8,7 @@ The VisionAir BLE protocol appears to be built on top of a **Cypress PSoC 4 BLE 
 
 ## Evidence
 
-### 1. Identical GATT Handles
+### 1. Identical GATT Handles and Service Indices
 
 The VisionAir device uses the exact same characteristic handles as the Day003 example:
 
@@ -45,18 +45,30 @@ These are the exact UUIDs used by VisionAir.
 - **Fields at fixed offsets** — No TLV, no length prefixes, just raw struct layout
 - **No modern serialization** — Not protobuf, msgpack, CBOR, or any self-describing format
 
-Likely implementation:
-```c
-#pragma pack(1)
-struct status_packet {
-    uint8_t type;
-    uint8_t reserved;
-    // ... fields at documented offsets
-};
+Cypress uses `CYBLE_CYPACKED` for packed structs (from Day046 Cycling Sensor example):
 
-// Send status
-memcpy(ble_buffer, &status, sizeof(status));
-CyBle_GattsNotification(connHandle, &notificationData);
+```c
+CYBLE_CYPACKED typedef struct
+{
+    uint16 flags;                       /* Mandatory */
+    int16 instantaneousPower;           /* Mandatory */
+    uint32 accumulatedTorque;           /* Send only low 2 bytes */
+    // ...
+}CYBLE_CYPACKED_ATTR CYBLE_CPS_POWER_MEASURE_T;
+```
+
+VisionAir likely uses similar packed structs:
+```c
+CYBLE_CYPACKED typedef struct
+{
+    uint8_t type;           // 0x01 for status
+    uint8_t reserved;
+    uint8_t device_id[4];   // little-endian
+    // ... 182 bytes total
+}CYBLE_CYPACKED_ATTR VISIONAIR_STATUS_T;
+
+// Send notification
+CyBle_GattsNotification(cyBle_connHandle, &notificationData);
 ```
 
 ### 4. Magic Bytes + XOR Checksum = UART Heritage
@@ -87,11 +99,54 @@ BLE GATT doesn't need this — packets are already framed by the protocol. Inclu
 3. **BLE_gatt.c generated file** — Contains UUID definitions in `cyBle_attUuid128[][16u]` array
 4. **Firmware updates** — If the device supports OTA, the update format might reveal more
 
-### Open Questions
+### 5. RTC Implementation Explains Timestamp Behavior
+
+VisionAir's special mode commands include HH:MM:SS timestamps. The PSoC BLE RTC example (Day033) shows why:
+
+- PSoC uses **Watchdog Timer** for 1-second interrupts to maintain time
+- The `CYBLE_CTS_CURRENT_TIME_T` struct stores hours, minutes, seconds
+- Time sync from app is common because low-power devices lack battery-backed RTC
+
+This explains why VisionAir sends current time with Holiday/Night Vent commands — the device likely needs time sync or uses the timestamp to calculate mode expiration.
+
+### 6. BLE Event Handler Pattern
+
+The Day003 code shows the exact pattern VisionAir uses:
+
+```c
+void CustomEventHandler(uint32 event, void * eventParam)
+{
+    CYBLE_GATTS_WRITE_REQ_PARAM_T *wrReqParam;
+
+    switch(event)
+    {
+        case CYBLE_EVT_GATTS_WRITE_REQ:
+            wrReqParam = (CYBLE_GATTS_WRITE_REQ_PARAM_T *) eventParam;
+
+            // Match attribute handle to determine which characteristic
+            if(wrReqParam->handleValPair.attrHandle ==
+               cyBle_customs[SERVICE_INDEX].customServiceInfo[CHAR_INDEX].customServiceCharHandle)
+            {
+                // Extract data and act on it
+                data[0] = wrReqParam->handleValPair.value.val[0];
+                // ...
+            }
+
+            // Send write response
+            CyBle_GattsWriteRsp(cyBle_connHandle);
+            break;
+    }
+}
+```
+
+VisionAir's command processing likely follows this exact structure — matching handle 0x0013 and parsing the command bytes.
+
+## Open Questions
 
 - Does the device expose UART for debugging/configuration?
 - Is there an installer/factory mode accessible via BLE?
 - What differentiates Holiday/Night Vent/Fixed Air Flow commands? (May be state machine on device)
+- Is there a bootloader for OTA updates? (PSoC supports this)
 
 ## Resources
 
