@@ -314,10 +314,11 @@ Responses arrive as notifications on characteristic handle 0x000e. Subscribe by 
 | 2 | 1 | Type | `0x01` |
 | 4 | 1 | Remote humidity (%) | 55 |
 | 5-7 | 3 | Unknown (constant per device) | `68 25 40` |
-| 8 | 1 | Remote temperature (°C) | 18 |
+| 8 | 1 | **Unknown** - always 18, not live temp | 18 |
 | 22-23 | 2 | Configured volume (m³) (LE u16) | 363 |
 | 26-27 | 2 | Operating days (LE u16) | 634 |
 | 28-29 | 2 | Filter life days (LE u16) | 330 |
+| 32 | 1 | **Live temperature** for selected sensor (see byte 34) | 19 |
 | 34 | 1 | Sensor selector | 0/1/2 |
 | 35 | 1 | Probe 1 temperature (°C) | 16 |
 | 38 | 1 | Summer limit temp threshold (°C) | 26 |

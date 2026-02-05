@@ -177,7 +177,7 @@ class StatusOffset:
     TYPE = 2
     DEVICE_ID = 4               # 4 bytes, little-endian
     HUMIDITY = 4                # Humidity % from remote
-    TEMP_REMOTE_CACHED = 8      # Room temperature (cached, may be stale)
+    UNKNOWN_8 = 8               # Always 18 in captures - NOT live temp (see TEMP_ACTIVE)
     CONFIGURED_VOLUME = 22      # 2 bytes, little-endian
     OPERATING_DAYS = 26         # 2 bytes, little-endian
     FILTER_DAYS = 28            # 2 bytes, little-endian
@@ -799,11 +799,10 @@ def parse_status(data: bytes) -> DeviceStatus | None:
         boost_active=data[StatusOffset.BOOST_ACTIVE] == 0x01 if len(data) > StatusOffset.BOOST_ACTIVE else False,
         sensor_selector=sensor_selector,
         sensor_name=sensor_name,
-        # Use live temperature from byte 32 when that sensor is selected,
-        # otherwise fall back to cached values at fixed offsets
+        # Use live temperature from byte 32 when that sensor is selected
+        # Note: byte 8 (UNKNOWN_8) is always 18 and NOT a live temp reading
         temp_remote=(
             data[StatusOffset.TEMP_ACTIVE] if sensor_selector == 2 and len(data) > StatusOffset.TEMP_ACTIVE
-            else data[StatusOffset.TEMP_REMOTE_CACHED] if len(data) > StatusOffset.TEMP_REMOTE_CACHED
             else None
         ),
         temp_probe1=(
