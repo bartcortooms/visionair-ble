@@ -13,6 +13,7 @@ from visionair_ble.protocol import (
     build_holiday_days_query,
     build_holiday_status_query,
     build_night_ventilation_activate,
+    build_sensor_select_request,
     build_settings_packet,
     build_status_request,
     _build_special_mode_command,
@@ -50,6 +51,29 @@ class TestPacketBuilding:
         packet = build_status_request()
         assert packet == bytes.fromhex("a5b6100005030000000016")
         assert verify_checksum(packet)
+
+    def test_build_sensor_select_probe2(self):
+        """Test sensor select for Probe 2 (inlet)."""
+        packet = build_sensor_select_request(0)
+        assert packet == bytes.fromhex("a5b610060518000000000b")
+        assert verify_checksum(packet)
+
+    def test_build_sensor_select_probe1(self):
+        """Test sensor select for Probe 1 (outlet)."""
+        packet = build_sensor_select_request(1)
+        assert packet == bytes.fromhex("a5b610060518000000010a")
+        assert verify_checksum(packet)
+
+    def test_build_sensor_select_remote(self):
+        """Test sensor select for Remote Control."""
+        packet = build_sensor_select_request(2)
+        assert packet == bytes.fromhex("a5b6100605180000000209")
+        assert verify_checksum(packet)
+
+    def test_build_sensor_select_invalid(self):
+        """Test sensor select with invalid sensor raises."""
+        with pytest.raises(ValueError, match="sensor must be"):
+            build_sensor_select_request(3)
 
     def test_build_boost_on(self):
         """Test BOOST ON command."""

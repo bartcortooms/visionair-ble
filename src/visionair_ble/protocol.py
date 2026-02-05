@@ -308,19 +308,32 @@ def build_sensor_request() -> bytes:
     return bytes.fromhex("a5b6100605070000000014")
 
 
-def build_sensor_cycle_request() -> bytes:
-    """Build an extended status request that cycles through sensors.
+def build_sensor_select_request(sensor: int) -> bytes:
+    """Build a request to get fresh data for a specific sensor.
 
-    Each time this command is sent, the device cycles to the next sensor
-    (Probe2 → Remote → Probe1 → Probe2 → ...) and returns fresh data for
-    that sensor in the "active sensor" bytes (32 = temp, 60 = humidity).
+    The response will have byte 34 (sensor_selector) matching the requested
+    sensor, and bytes 32/60 will contain fresh temperature/humidity.
 
-    To get fresh readings for all sensors, send this command 3 times.
+    To get fresh readings for all sensors, call this with 0, 1, and 2.
+
+    Args:
+        sensor: Sensor to read:
+            0 = Probe 2 (Air inlet)
+            1 = Probe 1 (Resistor outlet)
+            2 = Remote Control
 
     Returns:
-        Complete packet bytes: a5b6100605180000000209
+        Complete packet bytes
+
+    Raises:
+        ValueError: If sensor is not 0, 1, or 2
     """
-    return bytes.fromhex("a5b6100605180000000209")
+    if sensor not in (0, 1, 2):
+        raise ValueError("sensor must be 0 (Probe2), 1 (Probe1), or 2 (Remote)")
+
+    payload = bytes([0x10, 0x06, 0x05, 0x18, 0x00, 0x00, 0x00, sensor])
+    checksum = calc_checksum(payload)
+    return MAGIC + payload + bytes([checksum])
 
 
 def build_boost_command(enable: bool) -> bytes:

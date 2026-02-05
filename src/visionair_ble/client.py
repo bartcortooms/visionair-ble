@@ -27,8 +27,8 @@ from .protocol import (
     DeviceStatus,
     SensorData,
     build_boost_command,
-    build_sensor_cycle_request,
     build_sensor_request,
+    build_sensor_select_request,
     build_settings_packet,
     build_status_request,
     parse_sensors,
@@ -213,12 +213,13 @@ class VisionAirClient:
 
         await self._client.start_notify(self._status_char, handler)
         try:
-            # Send sensor cycle command 3 times to get all sensors
-            for _ in range(3):
+            # Request fresh readings from each sensor explicitly
+            # Sensor 0 = Probe2 (inlet), 1 = Probe1 (outlet), 2 = Remote
+            for sensor in (0, 1, 2):
                 event.clear()
                 current_data = None
                 await self._client.write_gatt_char(
-                    self._command_char, build_sensor_cycle_request(), response=True
+                    self._command_char, build_sensor_select_request(sensor), response=True
                 )
                 await asyncio.wait_for(event.wait(), timeout=timeout)
 

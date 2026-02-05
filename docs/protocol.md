@@ -94,16 +94,23 @@ a5b6 10 06 05 07 00 00 00 00 14
 
 Returns history packet with Probe 1 humidity.
 
-#### Sensor Cycle Request (type 0x10, param 0x18)
+#### Sensor Select Request (type 0x10, param 0x18)
 
-```
-a5b6 10 06 05 18 00 00 00 00 03
-```
+Requests fresh data for a specific sensor. Byte 7 selects which sensor:
 
-> **TODO: Re-verify.** The implementation claims this cycles through sensors
-> (Probe2 → Remote → Probe1) and returns fresh data in "active sensor" bytes
-> (32 = temp, 60 = humidity). This behavior was observed in captures but needs
-> re-verification against the raw packet data.
+| Byte 7 | Sensor | Packet |
+|--------|--------|--------|
+| 0x00 | Probe 2 (Air inlet) | `a5b610060518000000000b` |
+| 0x01 | Probe 1 (Resistor outlet) | `a5b610060518000000010a` |
+| 0x02 | Remote Control | `a5b6100605180000000209` |
+
+The response's sensor selector (byte 34) matches the requested sensor, and
+bytes 32/60 contain fresh temperature/humidity for that sensor.
+
+To get fresh readings for all sensors, send all three requests in sequence.
+
+> **Verified (2026-02-05):** Re-analyzed captures confirming byte7 selects
+> the sensor explicitly. The app sends requests in order 0→2→1 to refresh all sensors.
 
 ### 4.2 Device Control
 

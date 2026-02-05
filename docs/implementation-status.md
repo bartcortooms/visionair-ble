@@ -8,7 +8,7 @@ This document tracks which protocol features from [protocol.md](protocol.md) are
 |---------|------------|-------------|----------|
 | Status Request (0x10, param 0x03) | Yes | Yes | `build_status_request()` |
 | Sensor Request (0x10, param 0x07) | Yes | Yes | `build_sensor_request()` |
-| Sensor Cycle Request (0x10, param 0x18) | Partial | Yes | `build_sensor_cycle_request()` — needs re-verification |
+| Sensor Select Request (0x10, param 0x18) | Yes | Yes | `build_sensor_select_request(sensor)` — verified 2026-02-05 |
 | BOOST ON/OFF (0x10, param 0x19) | Yes | Yes | `build_boost_command()` |
 | Settings (0x1a) - airflow/preheat/summer | Yes | Yes | `build_settings_packet()` |
 | Holiday Days Query (0x10, param 0x1a) | Partial | Experimental | `build_holiday_days_query()` |
@@ -67,8 +67,6 @@ Features marked "Experimental" require `_experimental=True` flag to use. They ha
 Features that need more data before implementing:
 
 - **Diagnostic bitfield (byte 54)** — Only value 0x0F (all healthy) observed. Bit-to-component mapping is assumed based on UI order. Need a device with a faulty component to verify.
-
-- **Sensor Cycle Request** — Implementation claims specific cycling behavior (Probe2→Remote→Probe1, bytes 32/60). Needs re-verification against raw capture data.
 
 - **Schedule Mode 3 (HIGH)** — Byte value not captured. Only Mode 1 (0x28) and Mode 2 (0x32) observed.
 
