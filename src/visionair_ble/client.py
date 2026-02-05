@@ -176,29 +176,33 @@ class VisionAirClient:
         return sensors
 
     async def get_fresh_status(self, timeout: float = 10.0) -> DeviceStatus:
-        """Get device status with fresh sensor readings from all sensors.
+        """Get device status with fresh temperature readings from all sensors.
 
-        This method cycles through all three sensors (Probe2, Remote, Probe1)
-        to collect fresh temperature and humidity readings, then returns a
-        DeviceStatus with all values populated.
+        This method explicitly requests readings from each sensor (Probe2,
+        Probe1, Remote) to collect fresh temperature values. The regular
+        get_status() method may return stale cached temperature values.
 
-        The regular get_status() method returns stale cached sensor values.
-        Use this method when you need accurate current readings.
+        Note on humidity:
+        - Remote humidity comes from the status packet (accurate)
+        - Probe 1 humidity requires a separate get_sensors() call
+        - Probe 2 has no humidity sensor
 
         Args:
             timeout: How long to wait for each response in seconds
 
         Returns:
-            DeviceStatus with fresh sensor readings
+            DeviceStatus with fresh temperature readings
 
         Raises:
             TimeoutError: If no response within timeout
         """
         self._find_characteristics()
 
-        # Collect fresh readings for each sensor
+        # Collect fresh temperature readings for each sensor
+        # Note: Humidity is NOT available per-sensor from STATUS packets.
+        # Remote humidity comes from byte 5 (via parse_status).
+        # Probe 1 humidity comes from HISTORY packets (via get_sensors).
         fresh_temps: dict[int, int] = {}  # selector -> temp
-        fresh_humidity: dict[int, float] = {}  # selector -> humidity
         last_status_data: bytes | None = None
 
         event = asyncio.Event()
@@ -223,13 +227,10 @@ class VisionAirClient:
                 )
                 await asyncio.wait_for(event.wait(), timeout=timeout)
 
-                if current_data and len(current_data) >= 61:
+                if current_data and len(current_data) >= 43:
                     selector = current_data[34]
+                    # Byte 32 contains fresh temperature for selected sensor
                     fresh_temps[selector] = current_data[32]
-                    # Humidity: byte 60 divided by 2, but >100% means invalid
-                    hum_raw = current_data[60]
-                    if hum_raw <= 200:  # max 100%
-                        fresh_humidity[selector] = hum_raw / 2
                     last_status_data = current_data
         finally:
             await self._client.stop_notify(self._status_char)
@@ -252,8 +253,8 @@ class VisionAirClient:
             status = replace(status, temp_probe1=fresh_temps[1])
         if 2 in fresh_temps:
             status = replace(status, temp_remote=fresh_temps[2])
-        if 2 in fresh_humidity:
-            status = replace(status, humidity_remote=fresh_humidity[2])
+        # Note: humidity_remote comes from parse_status (byte 5).
+        # For fresh Probe 1 humidity, call get_sensors() separately.
 
         self._last_status = status
         return status
