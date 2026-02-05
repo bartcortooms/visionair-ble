@@ -24,7 +24,7 @@ This document tracks which protocol features from [protocol.md](protocol.md) are
 | Feature | Documented | Implemented | Function |
 |---------|------------|-------------|----------|
 | Status (0x01) - core fields | Yes | Yes | `parse_status()` |
-| Status - diagnostic bitfield (byte 54) | Yes | No | — |
+| Status - diagnostic bitfield (byte 54) | Partial | No | Bit mapping unverified |
 | Status - bypass state | Partial | No | — |
 | Sensor/History (0x03) | Yes | Yes | `parse_sensors()` |
 | Schedule (0x02) - current time | Yes | No | — |
@@ -47,5 +47,10 @@ This document tracks which protocol features from [protocol.md](protocol.md) are
 Features that are fully documented and ready for implementation:
 
 1. **Schedule Config** — Time slot read/write for automated ventilation profiles
-2. **Diagnostic bitfield** — Simple addition to expose byte 54 in status parsing
-3. **Holiday Status (0x50)** — Parse response from `build_holiday_status_query()`
+2. **Holiday Status (0x50)** — Parse response from `build_holiday_status_query()`
+
+## Needs Verification
+
+Features that need more data before implementing:
+
+- **Diagnostic bitfield (byte 54)** — Only value 0x0F (all healthy) observed. Bit-to-component mapping is assumed based on UI order. Need a device with a faulty component to verify.
