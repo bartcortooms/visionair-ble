@@ -276,6 +276,30 @@ class VisionAirClient:
                             await asyncio.sleep(delay)
                     except Exception:
                         break
+
+            # Request fresh STATUS packet for updated humidity_remote
+            # (byte 5 in sensor select responses may be stale)
+            if self._client.is_connected:
+                await asyncio.sleep(delay)
+                expected_type = PacketType.STATUS_RESPONSE
+                for attempt in range(retries + 1):
+                    if not self._client.is_connected:
+                        break
+                    event.clear()
+                    current_data = None
+                    try:
+                        await self._client.write_gatt_char(
+                            self._command_char, build_status_request(), response=True
+                        )
+                        await asyncio.wait_for(event.wait(), timeout=timeout)
+                        if current_data and len(current_data) >= 6:
+                            last_status_data = current_data
+                        break
+                    except TimeoutError:
+                        if attempt < retries:
+                            await asyncio.sleep(delay)
+                    except Exception:
+                        break
         finally:
             try:
                 await self._client.stop_notify(self._status_char)
