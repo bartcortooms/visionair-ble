@@ -79,7 +79,7 @@ Without this, you'll get `btsnooz` format (compressed/truncated) instead of full
 ./scripts/capture/vmictl.py btpull
 ```
 
-This creates a bugreport and extracts the btsnoop log to `/tmp/vmi_btlogs/`.
+This creates a bugreport and extracts the btsnoop log to `data/captures/`.
 
 ### Manual Extraction
 

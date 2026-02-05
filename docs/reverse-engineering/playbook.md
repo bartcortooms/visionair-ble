@@ -57,12 +57,12 @@ Use the non-interactive session commands for exploring protocol fields. These ar
 ```bash
 # 1. Start session (outputs directory path)
 SESSION=$(./scripts/capture/vmictl.py session-start humidity_test)
-# Example output: /tmp/vmi_btlogs/humidity_test_20260205_153000
+# Example output: data/captures/humidity_test_20260205_153000
 
 # 2. Navigate to screen, take checkpoint (outputs screenshot path)
 ./scripts/capture/vmictl.py measurements-full
 SCREENSHOT=$(./scripts/capture/vmictl.py session-checkpoint "$SESSION")
-# Example output: /tmp/vmi_btlogs/.../checkpoint_1_153045.png
+# Example output: data/captures/.../checkpoint_1_153045.png
 
 # 3. Read the screenshot to see values, then append to checkpoints.txt
 cat >> "$SESSION/checkpoints.txt" << EOF

@@ -144,11 +144,11 @@ Non-interactive commands for CLI tools and coding agents:
 ```bash
 # 1. Start session (outputs directory path)
 SESSION=$(./scripts/capture/vmictl.py session-start humidity_test)
-# Example output: /tmp/vmi_btlogs/humidity_test_20260205_153000
+# Example output: data/captures/humidity_test_20260205_153000
 
 # 2. Navigate to screen, take checkpoint (outputs screenshot path)
 SCREENSHOT=$(./scripts/capture/vmictl.py session-checkpoint "$SESSION")
-# Example output: /tmp/vmi_btlogs/.../checkpoint_1_153045.png
+# Example output: data/captures/.../checkpoint_1_153045.png
 
 # 3. Read the screenshot to see values, then append to checkpoints.txt
 # (Agent reads image, then writes observed values)
@@ -182,7 +182,7 @@ Each session creates a directory with:
 
 ### Basic Extraction
 ```bash
-python scripts/capture/extract_packets.py /tmp/vmi_btlogs/session/btsnoop.log
+python scripts/capture/extract_packets.py data/captures/session/btsnoop.log
 ```
 
 ### With Checkpoint Correlation
