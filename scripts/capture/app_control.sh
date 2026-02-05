@@ -565,117 +565,78 @@ pull_btsnoop() {
     fi
 }
 
-# Interactive capture session with timestamped checkpoints
-# Each checkpoint records: timestamp, screenshot, app values
-# This allows correlation between specific packets and displayed values
-capture_session() {
+# Non-interactive capture session commands
+# For use by CLI tools and coding agents
+
+# Start a new capture session - creates directory, returns path
+session_start() {
     local session_name="${1:-session}"
     local session_start=$(date +%Y%m%d_%H%M%S)
     local capture_dir="/tmp/vmi_btlogs/${session_name}_${session_start}"
-    local checkpoint_num=0
     mkdir -p "$capture_dir"
+    echo "$(date -Iseconds)" > "$capture_dir/session_start.txt"
+    echo "0" > "$capture_dir/checkpoint_count.txt"
+    # Output just the path for easy parsing
+    echo "$capture_dir"
+}
 
-    echo "=== Capture Session: ${session_name}_${session_start} ==="
-    echo "Output directory: $capture_dir"
-    echo ""
-    echo "Commands during session:"
-    echo "  c / checkpoint  - Record current values (timestamp + screenshot + values)"
-    echo "  s / screenshot  - Just take a screenshot"
-    echo "  q / quit        - End session and pull btsnoop logs"
-    echo "  help            - Show this help"
-    echo ""
-    echo "Start time: $(date -Iseconds)"
-    echo "$session_start" > "$capture_dir/session_start.txt"
-    echo ""
+# Take a checkpoint screenshot, returns the screenshot path
+# Usage: session-checkpoint <session_dir>
+session_checkpoint() {
+    local capture_dir="$1"
+    if [[ -z "$capture_dir" || ! -d "$capture_dir" ]]; then
+        echo "ERROR: Invalid session directory: $capture_dir" >&2
+        return 1
+    fi
 
-    while true; do
-        read -p "capture> " cmd args
-        case "$cmd" in
-            c|checkpoint)
-                checkpoint_num=$((checkpoint_num + 1))
-                local ts=$(date -Iseconds)
-                local ts_file=$(date +%H%M%S)
-                echo ""
-                echo "=== Checkpoint $checkpoint_num at $ts ==="
+    # Increment checkpoint counter
+    local checkpoint_num=$(cat "$capture_dir/checkpoint_count.txt" 2>/dev/null || echo "0")
+    checkpoint_num=$((checkpoint_num + 1))
+    echo "$checkpoint_num" > "$capture_dir/checkpoint_count.txt"
 
-                # Take screenshot
-                local screenshot_file="$capture_dir/checkpoint_${checkpoint_num}_${ts_file}.png"
-                adb_cmd exec-out screencap -p > "$screenshot_file"
-                echo "Screenshot: $screenshot_file"
+    local ts=$(date -Iseconds)
+    local ts_file=$(date +%H%M%S)
+    local screenshot_file="$capture_dir/checkpoint_${checkpoint_num}_${ts_file}.png"
 
-                # Record values
-                echo "Enter values shown in app (Enter to skip):"
-                read -p "  Remote temp (°C): " remote_temp
-                read -p "  Remote humidity (%): " remote_humidity
-                read -p "  Probe1 temp (°C): " probe1_temp
-                read -p "  Probe1 humidity (%): " probe1_humidity
-                read -p "  Probe2 temp (°C): " probe2_temp
-                read -p "  Airflow (low/med/high): " airflow
-                read -p "  Notes: " notes
+    # Take screenshot
+    adb_cmd exec-out screencap -p > "$screenshot_file"
 
-                # Append to checkpoints file
-                cat >> "$capture_dir/checkpoints.txt" << CHECKPOINT
+    # Record timestamp in checkpoints file (values added separately by agent)
+    cat >> "$capture_dir/checkpoints.txt" << CHECKPOINT
 
 [checkpoint_$checkpoint_num]
 timestamp=$ts
 screenshot=checkpoint_${checkpoint_num}_${ts_file}.png
-remote_temp=$remote_temp
-remote_humidity=$remote_humidity
-probe1_temp=$probe1_temp
-probe1_humidity=$probe1_humidity
-probe2_temp=$probe2_temp
-airflow=$airflow
-notes=$notes
 CHECKPOINT
-                echo "Checkpoint $checkpoint_num saved."
-                echo ""
-                ;;
 
-            s|screenshot)
-                local ts_file=$(date +%H%M%S)
-                local screenshot_file="$capture_dir/screenshot_${ts_file}.png"
-                adb_cmd exec-out screencap -p > "$screenshot_file"
-                echo "Screenshot: $screenshot_file"
-                ;;
+    # Output screenshot path for agent to read
+    echo "$screenshot_file"
+}
 
-            q|quit|exit)
-                echo ""
-                echo "Ending session at $(date -Iseconds)"
-                echo ""
-                echo "Pulling btsnoop logs..."
-                adb_cmd bugreport "$capture_dir/bugreport.zip"
-                unzip -jo "$capture_dir/bugreport.zip" "*/btsnooz_hci.log" -d "$capture_dir/" 2>/dev/null || \
-                unzip -jo "$capture_dir/bugreport.zip" "*/btsnoop_hci.log" -d "$capture_dir/" 2>/dev/null || true
-                mv "$capture_dir/btsnooz_hci.log" "$capture_dir/btsnoop.log" 2>/dev/null || \
-                mv "$capture_dir/btsnoop_hci.log" "$capture_dir/btsnoop.log" 2>/dev/null || true
+# End session and pull btsnoop logs
+# Usage: session-end <session_dir>
+session_end() {
+    local capture_dir="$1"
+    if [[ -z "$capture_dir" || ! -d "$capture_dir" ]]; then
+        echo "ERROR: Invalid session directory: $capture_dir" >&2
+        return 1
+    fi
 
-                echo ""
-                echo "=== Session Complete ==="
-                echo "Directory: $capture_dir"
-                echo "Checkpoints: $checkpoint_num"
-                ls -la "$capture_dir"
-                echo ""
-                echo "To analyze with checkpoints:"
-                echo "  python scripts/capture/extract_packets.py $capture_dir/btsnoop.log --checkpoints $capture_dir/checkpoints.txt"
-                break
-                ;;
+    echo "$(date -Iseconds)" > "$capture_dir/session_end.txt"
 
-            help|h|\?)
-                echo "Commands:"
-                echo "  c / checkpoint  - Record timestamp + screenshot + values"
-                echo "  s / screenshot  - Just take a screenshot"
-                echo "  q / quit        - End session and pull logs"
-                ;;
+    echo "Pulling btsnoop logs..." >&2
+    adb_cmd bugreport "$capture_dir/bugreport.zip"
+    unzip -jo "$capture_dir/bugreport.zip" "*/btsnooz_hci.log" -d "$capture_dir/" 2>/dev/null || \
+    unzip -jo "$capture_dir/bugreport.zip" "*/btsnoop_hci.log" -d "$capture_dir/" 2>/dev/null || true
+    mv "$capture_dir/btsnooz_hci.log" "$capture_dir/btsnoop.log" 2>/dev/null || \
+    mv "$capture_dir/btsnoop_hci.log" "$capture_dir/btsnoop.log" 2>/dev/null || true
 
-            "")
-                # Empty input, just continue
-                ;;
+    local checkpoint_num=$(cat "$capture_dir/checkpoint_count.txt" 2>/dev/null || echo "0")
+    echo "Session complete. Checkpoints: $checkpoint_num" >&2
+    echo "Analyze with: python scripts/capture/extract_packets.py $capture_dir/btsnoop.log --checkpoints $capture_dir/checkpoints.txt" >&2
 
-            *)
-                echo "Unknown command: $cmd (try 'help')"
-                ;;
-        esac
-    done
+    # Output the btsnoop log path
+    echo "$capture_dir/btsnoop.log"
 }
 
 full_connect_sequence() {
@@ -727,7 +688,9 @@ case "${1:-help}" in
     btstart)    start_btsnoop ;;
     btsnoop-enable) enable_btsnoop_full ;;
     btpull)     pull_btsnoop ;;
-    capture)    capture_session "$2" ;;
+    session-start) session_start "$2" ;;
+    session-checkpoint) session_checkpoint "$2" ;;
+    session-end) session_end "$2" ;;
     connect)    full_connect_sequence ;;
     fan-min)    tap_fan_min ;;
     fan-mid)    tap_fan_mid ;;
@@ -799,9 +762,13 @@ case "${1:-help}" in
         echo "  btsnoop-enable - Enable FULL BT snoop logging (via Developer Options)"
         echo "  btstart     - Enable BT snoop logging (via settings command only)"
         echo "  btpull      - Pull BT snoop logs"
-        echo "  capture [name] - Interactive capture session with checkpoints"
-        echo "                   Type 'c' to record: timestamp + screenshot + app values"
-        echo "                   Type 'q' to end session and pull btsnoop logs"
-        echo "                   Checkpoints have ISO timestamps for packet correlation"
+        echo ""
+        echo "Capture session (non-interactive, for CLI/agents):"
+        echo "  session-start <name>  - Start session, outputs directory path"
+        echo "  session-checkpoint <dir> - Take timestamped screenshot, outputs image path"
+        echo "  session-end <dir>     - Pull btsnoop logs, outputs btsnoop.log path"
+        echo ""
+        echo "  Workflow: start -> navigate/checkpoint -> read screenshot -> write values -> end"
+        echo "  Values should be appended to <dir>/checkpoints.txt after each checkpoint"
         ;;
 esac

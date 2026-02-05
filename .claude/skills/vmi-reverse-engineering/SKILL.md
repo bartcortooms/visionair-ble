@@ -131,52 +131,49 @@ VMI_ADB_TARGET=192.168.1.100:5555 ./scripts/capture/app_control.sh connect
 | `btsnoop-enable` | Enable FULL BT snoop logging |
 | `btstart` | Enable logging (basic, may be filtered) |
 | `btpull` | Pull btsnoop logs via bugreport |
-| `capture [name]` | Start interactive capture session |
+| `session-start <name>` | Start capture session, outputs directory path |
+| `session-checkpoint <dir>` | Take timestamped screenshot, outputs image path |
+| `session-end <dir>` | End session, pull btsnoop logs |
 
-## Interactive Capture Session
+## Capture Session Workflow
 
-The `capture` command starts an interactive session for correlating app values with packet data:
+Non-interactive commands for CLI tools and coding agents:
 
 ```bash
-./scripts/capture/app_control.sh capture humidity_test
+# 1. Start session (outputs directory path)
+SESSION=$(./scripts/capture/app_control.sh session-start humidity_test)
+# Example output: /tmp/vmi_btlogs/humidity_test_20260205_153000
+
+# 2. Navigate to screen, take checkpoint (outputs screenshot path)
+SCREENSHOT=$(./scripts/capture/app_control.sh session-checkpoint "$SESSION")
+# Example output: /tmp/vmi_btlogs/.../checkpoint_1_153045.png
+
+# 3. Read the screenshot to see values, then append to checkpoints.txt
+# (Agent reads image, then writes observed values)
+
+# 4. End session and pull btsnoop logs
+./scripts/capture/app_control.sh session-end "$SESSION"
 ```
 
-### Session Commands
-| Command | Description |
-|---------|-------------|
-| `c` / `checkpoint` | Record: timestamp + screenshot + app values |
-| `s` / `screenshot` | Just take a screenshot |
-| `q` / `quit` | End session, pull btsnoop logs |
-| `help` | Show commands |
+### Recording Values
 
-### Checkpoint Workflow
+After each checkpoint, append observed values to `$SESSION/checkpoints.txt`:
 
 ```
-capture> c
-=== Checkpoint 1 at 2026-02-05T15:30:45+01:00 ===
-Screenshot: checkpoint_1_153045.png
-Enter values shown in app:
-  Remote temp (°C): 19
-  Remote humidity (%): 55
-  Probe1 temp (°C): 16
-  Probe1 humidity (%): 71
-  Probe2 temp (°C): 13
-  Airflow (low/med/high): medium
-  Notes: after switching to Probe1 sensor
-Checkpoint 1 saved.
-
-capture> q
-Ending session...
-Pulling btsnoop logs...
-=== Session Complete ===
-Directory: /tmp/vmi_btlogs/humidity_test_20260205_153000
+remote_temp=19
+remote_humidity=55
+probe1_temp=16
+probe1_humidity=71
+notes=after switching to Probe1 sensor
 ```
+
+The checkpoint timestamp and screenshot filename are automatically recorded.
 
 ### Session Output
 
 Each session creates a directory with:
 - `btsnoop.log` - Raw BLE packet capture
-- `checkpoints.txt` - Timestamped app values
+- `checkpoints.txt` - Timestamps + values (values added by agent)
 - `checkpoint_N_HHMMSS.png` - Screenshots for each checkpoint
 
 ## Packet Analysis
@@ -256,23 +253,36 @@ All packets: `0xa5 0xb6` magic prefix, XOR checksum (last byte).
 When helping with reverse engineering:
 
 1. **Before capturing:** Ensure BT snoop is enabled with `btsnoop-enable`
-2. **For new protocol fields:** Use interactive capture session with checkpoints
-3. **Record values:** Always note what the app displays at each checkpoint
+2. **For new protocol fields:** Use capture session with checkpoints
+3. **Record values:** Read each checkpoint screenshot, append values to checkpoints.txt
 4. **Compare packets:** Use `--checkpoints` flag to correlate bytes with app values
 5. **Navigation:** Follow screen hierarchy - can't jump directly to submenus
-6. **Verify results:** Check screenshots in `/tmp/vmi_btlogs/` or session directory
+6. **Verify results:** Check screenshots in session directory
 
 ### Common Investigation Patterns
 
 **To verify a byte offset:**
 ```bash
-./scripts/capture/app_control.sh capture byte_verify
+# Start session
+SESSION=$(./scripts/capture/app_control.sh session-start byte_verify)
+
 # Navigate to screen showing the value
-# c (checkpoint, record displayed value)
+./scripts/capture/app_control.sh measurements-full
+
+# Take checkpoint, read screenshot, record values
+IMG=$(./scripts/capture/app_control.sh session-checkpoint "$SESSION")
+# Read $IMG to see displayed values, append to $SESSION/checkpoints.txt
+
 # Change something that should affect the value
-# c (checkpoint, record new value)
-# q (quit, pull logs)
-python scripts/capture/extract_packets.py session/btsnoop.log --checkpoints session/checkpoints.txt
+./scripts/capture/app_control.sh sensor-probe1
+
+# Take another checkpoint
+IMG=$(./scripts/capture/app_control.sh session-checkpoint "$SESSION")
+# Read $IMG, append new values to checkpoints.txt
+
+# End session and analyze
+./scripts/capture/app_control.sh session-end "$SESSION"
+python scripts/capture/extract_packets.py "$SESSION/btsnoop.log" --checkpoints "$SESSION/checkpoints.txt"
 ```
 
 **To find which byte encodes a value:**
