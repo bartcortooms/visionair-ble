@@ -8,7 +8,7 @@ This document tracks which protocol features from [protocol.md](protocol.md) are
 |---------|------------|-------------|----------|
 | Status Request (0x10, param 0x03) | Yes | Yes | `build_status_request()` |
 | Sensor Request (0x10, param 0x07) | Yes | Yes | `build_sensor_request()` |
-| Sensor Cycle Request (0x10, param 0x18) | Yes | Yes | `build_sensor_cycle_request()` |
+| Sensor Cycle Request (0x10, param 0x18) | Partial | Yes | `build_sensor_cycle_request()` — needs re-verification |
 | BOOST ON/OFF (0x10, param 0x19) | Yes | Yes | `build_boost_command()` |
 | Settings (0x1a) - airflow/preheat/summer | Yes | Yes | `build_settings_packet()` |
 | Holiday Days Query (0x10, param 0x1a) | Partial | Experimental | `build_holiday_days_query()` |
@@ -38,7 +38,7 @@ This document tracks which protocol features from [protocol.md](protocol.md) are
 |---------|------------|-------------|-------|
 | `DeviceStatus` dataclass | Yes | Yes | Core status fields |
 | `SensorData` dataclass | Yes | Yes | Live sensor readings |
-| Airflow mode mapping | Yes | Yes | LOW/MEDIUM/HIGH |
+| Airflow mode mapping | Yes | Yes | LOW/MEDIUM/HIGH — byte meaning unknown |
 | Volume-based calculation | Yes | Yes | ACH multipliers |
 | Sensor metadata for HA | Yes | Yes | Auto-discovery support |
 
@@ -67,3 +67,9 @@ Features marked "Experimental" require `_experimental=True` flag to use. They ha
 Features that need more data before implementing:
 
 - **Diagnostic bitfield (byte 54)** — Only value 0x0F (all healthy) observed. Bit-to-component mapping is assumed based on UI order. Need a device with a faulty component to verify.
+
+- **Sensor Cycle Request** — Implementation claims specific cycling behavior (Probe2→Remote→Probe1, bytes 32/60). Needs re-verification against raw capture data.
+
+- **Schedule Mode 3 (HIGH)** — Byte value not captured. Only Mode 1 (0x28) and Mode 2 (0x32) observed.
+
+- **Airflow setting bytes** — The byte pairs (0x19/0x0A, 0x28/0x15, 0x07/0x30) work for LOW/MEDIUM/HIGH but their actual meaning (PWM? calibration?) is unknown.

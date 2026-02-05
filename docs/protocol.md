@@ -100,6 +100,11 @@ Returns history packet with Probe 1 humidity.
 a5b6 10 06 05 18 00 00 00 00 03
 ```
 
+> **TODO: Re-verify.** The implementation claims this cycles through sensors
+> (Probe2 → Remote → Probe1) and returns fresh data in "active sensor" bytes
+> (32 = temp, 60 = humidity). This behavior was observed in captures but needs
+> re-verification against the raw packet data.
+
 ### 4.2 Device Control
 
 #### BOOST Command (type 0x10, param 0x19)
@@ -142,7 +147,11 @@ Structure: `a5b6 1a 06 06 1a <preheat> <mode> <temp> <af1> <af2> <checksum>`
 | MEDIUM | 0x28 | 0x15 | `a5b61a06061a020210281527` |
 | HIGH | 0x07 | 0x30 | `a5b61a06061a020210073027` |
 
-These byte values are internal device references (likely fan PWM or calibration indices), not m³/h values. See [Volume-Based Calculations](#62-volume-based-calculations) for actual airflow.
+> **Note:** These byte values are internal device references, not m³/h values.
+> The actual meaning (fan PWM, calibration indices, etc.) is unknown — we only
+> know these specific byte pairs correspond to LOW/MEDIUM/HIGH modes through
+> observation. See [Volume-Based Calculations](#62-volume-based-calculations)
+> for actual airflow.
 
 ### 4.3 Special Modes
 
@@ -413,9 +422,24 @@ See [implementation-status.md](implementation-status.md) for feature implementat
 
 ### Open Questions
 
+**Special Modes:**
 - How does the device distinguish Holiday vs Night Vent vs Fixed Air Flow modes?
 - How to explicitly deactivate special modes (toggle OFF behavior)?
+- Does Holiday mode require the days query every time, or is it stored?
+
+**Schedule:**
+- Schedule Mode 3 (HIGH) byte value — not captured
+- Schedule Response fields (bytes 8-10, 15) — marked with "?"
+- How to enable/disable "Activating time slots" toggle
+
+**Status/Sensors:**
+- Sensor Cycle Request behavior — needs re-verification against captures
 - Bypass state encoding (weather dependent)
+- What do airflow setting bytes actually represent (PWM? calibration index?)
+
+**Responses:**
+- Holiday Status (0x50) response structure — not decoded
+- Settings Ack (0x23) — structure not documented
 
 ## Appendix B: References
 
