@@ -7,7 +7,13 @@ from visionair_ble.protocol import (
     AIRFLOW_LOW,
     AIRFLOW_MEDIUM,
     build_boost_command,
+    build_fixed_airflow_activate,
+    build_holiday_activate,
+    build_holiday_days_query,
+    build_holiday_status_query,
+    build_night_ventilation_activate,
     build_settings_packet,
+    build_special_mode_command,
     build_status_request,
     calc_checksum,
     is_visionair_device,
@@ -226,3 +232,78 @@ class TestDeviceIdentification:
         assert is_visionair_device("AA:BB:CC:DD:EE:FF", "Cube")
         assert not is_visionair_device("AA:BB:CC:DD:EE:FF", "Other Device")
         assert not is_visionair_device("AA:BB:CC:DD:EE:FF", None)
+
+
+class TestSpecialModes:
+    """Tests for Holiday, Night Ventilation, and Fixed Air Flow modes."""
+
+    def test_build_holiday_days_query_7_days(self):
+        """Test Holiday days query for 7 days."""
+        packet = build_holiday_days_query(7)
+        assert packet == bytes.fromhex("a5b61006051a000000070e")
+        assert verify_checksum(packet)
+
+    def test_build_holiday_days_query_14_days(self):
+        """Test Holiday days query for 14 days."""
+        packet = build_holiday_days_query(14)
+        assert packet == bytes.fromhex("a5b61006051a0000000e07")
+        assert verify_checksum(packet)
+
+    def test_build_holiday_days_query_3_days(self):
+        """Test Holiday days query for 3 days."""
+        packet = build_holiday_days_query(3)
+        assert packet == bytes.fromhex("a5b61006051a000000030a")
+        assert verify_checksum(packet)
+
+    def test_build_holiday_status_query(self):
+        """Test Holiday status query packet."""
+        packet = build_holiday_status_query()
+        assert packet == bytes.fromhex("a5b61006052c000000003f")
+        assert verify_checksum(packet)
+
+    def test_build_special_mode_command_structure(self):
+        """Test special mode command has correct structure."""
+        packet = build_special_mode_command(preheat_enabled=True)
+
+        assert packet[:2] == b"\xa5\xb6"  # magic
+        assert packet[2] == 0x1A  # type
+        assert packet[3:6] == bytes([0x06, 0x06, 0x1A])  # header
+        assert packet[6] == 0x02  # preheat enabled
+        assert packet[7] == 0x04  # special mode flag
+        # bytes 8-10 are HH:MM:SS (time-dependent)
+        assert 0 <= packet[8] <= 23  # valid hour
+        assert 0 <= packet[9] <= 59  # valid minute
+        assert 0 <= packet[10] <= 59  # valid second
+        assert verify_checksum(packet)
+
+    def test_build_special_mode_preheat_disabled(self):
+        """Test special mode with preheat disabled."""
+        packet = build_special_mode_command(preheat_enabled=False)
+        assert packet[6] == 0x00  # preheat disabled
+        assert packet[7] == 0x04  # special mode flag still set
+        assert verify_checksum(packet)
+
+    def test_build_holiday_activate_returns_sequence(self):
+        """Test Holiday activate returns correct packet sequence."""
+        packets = build_holiday_activate(7, preheat_enabled=True)
+
+        assert len(packets) == 2
+        # First packet is days query
+        assert packets[0] == bytes.fromhex("a5b61006051a000000070e")
+        # Second packet is special mode activation
+        assert packets[1][7] == 0x04  # special mode flag
+        assert verify_checksum(packets[0])
+        assert verify_checksum(packets[1])
+
+    def test_build_night_ventilation_activate(self):
+        """Test Night Ventilation activation."""
+        packet = build_night_ventilation_activate(preheat_enabled=True)
+        assert packet[7] == 0x04  # special mode flag
+        assert verify_checksum(packet)
+
+    def test_build_fixed_airflow_activate(self):
+        """Test Fixed Air Flow activation."""
+        packet = build_fixed_airflow_activate(preheat_enabled=False)
+        assert packet[6] == 0x00  # preheat disabled
+        assert packet[7] == 0x04  # special mode flag
+        assert verify_checksum(packet)

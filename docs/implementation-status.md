@@ -11,11 +11,11 @@ This document tracks which protocol features from [protocol.md](protocol.md) are
 | Sensor Cycle Request (0x10, param 0x18) | Yes | Yes | `build_sensor_cycle_request()` |
 | BOOST ON/OFF (0x10, param 0x19) | Yes | Yes | `build_boost_command()` |
 | Settings (0x1a) - airflow/preheat/summer | Yes | Yes | `build_settings_packet()` |
-| Holiday Days Query (0x10, param 0x1a) | Yes | No | — |
-| Holiday Activate (0x1a, byte7=0x04) | Yes | No | — |
-| Holiday Status Query (0x10, param 0x2c) | Yes | No | — |
-| Night Ventilation (0x1a, byte7=0x04) | Yes | No | — |
-| Fixed Air Flow (0x1a, byte7=0x04) | Yes | No | — |
+| Holiday Days Query (0x10, param 0x1a) | Yes | Yes | `build_holiday_days_query()` |
+| Holiday Activate (0x1a, byte7=0x04) | Yes | Yes | `build_holiday_activate()` |
+| Holiday Status Query (0x10, param 0x2c) | Yes | Yes | `build_holiday_status_query()` |
+| Night Ventilation (0x1a, byte7=0x04) | Yes | Yes | `build_night_ventilation_activate()` |
+| Fixed Air Flow (0x1a, byte7=0x04) | Yes | Yes | `build_fixed_airflow_activate()` |
 | Schedule Config (0x46, 0x47) | Yes | No | — |
 | Schedule Command (0x1a, byte7=0x05) | Partial | No | — |
 
@@ -46,6 +46,6 @@ This document tracks which protocol features from [protocol.md](protocol.md) are
 
 Features that are fully documented and ready for implementation:
 
-1. **Holiday Mode** — Useful for vacation periods, protocol fully decoded
-2. **Schedule Config** — Time slot read/write for automated ventilation profiles
-3. **Diagnostic bitfield** — Simple addition to expose byte 54 in status parsing
+1. **Schedule Config** — Time slot read/write for automated ventilation profiles
+2. **Diagnostic bitfield** — Simple addition to expose byte 54 in status parsing
+3. **Holiday Status (0x50)** — Parse response from `build_holiday_status_query()`

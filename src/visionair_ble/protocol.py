@@ -23,6 +23,7 @@ humidity measurements. Always use get_sensors() for accurate temperature reading
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import NamedTuple
 
 
@@ -335,6 +336,127 @@ def build_boost_command(enable: bool) -> bytes:
         return bytes.fromhex("a5b610060519000000010b")
     else:
         return bytes.fromhex("a5b610060519000000000a")
+
+
+# =============================================================================
+# Special Modes (Holiday, Night Ventilation, Fixed Air Flow)
+# =============================================================================
+#
+# All special modes use Settings command with byte 7 = 0x04.
+# Bytes 8-9-10 encode HH:MM:SS timestamp of activation time.
+#
+# The device distinguishes modes based on preceding query packets:
+# - Holiday: Query 0x1a sets days, then Settings 0x04 activates
+# - Night Ventilation: Direct Settings 0x04 activation
+# - Fixed Air Flow: Direct Settings 0x04 activation
+
+
+def build_holiday_days_query(days: int) -> bytes:
+    """Build query to set Holiday mode duration.
+
+    This should be sent before build_holiday_activate() to set
+    the number of days the device will run in Holiday mode.
+
+    Args:
+        days: Number of days (typically 1-30)
+
+    Returns:
+        Complete packet bytes
+    """
+    payload = bytes([0x10, 0x06, 0x05, 0x1A, 0x00, 0x00, 0x00, days])
+    checksum = calc_checksum(payload)
+    return MAGIC + payload + bytes([checksum])
+
+
+def build_holiday_status_query() -> bytes:
+    """Build query to get Holiday mode status.
+
+    Returns type 0x50 response with current Holiday mode state.
+
+    Returns:
+        Complete packet bytes
+    """
+    return bytes.fromhex("a5b61006052c000000003f")
+
+
+def build_special_mode_command(preheat_enabled: bool = True) -> bytes:
+    """Build a special mode activation command.
+
+    Used for Holiday, Night Ventilation, and Fixed Air Flow modes.
+    The specific mode is determined by preceding query packets:
+    - For Holiday: send build_holiday_days_query() first
+    - For Night Vent / Fixed Air Flow: send directly
+
+    The command includes the current time as HH:MM:SS timestamp.
+
+    Args:
+        preheat_enabled: Whether to enable preheat during the mode
+
+    Returns:
+        Complete packet bytes
+    """
+    now = datetime.now()
+    payload = bytes([
+        0x1A,
+        0x06,
+        0x06,
+        0x1A,
+        0x02 if preheat_enabled else 0x00,  # byte 6: preheat
+        0x04,                                # byte 7: special mode flag
+        now.hour,                            # byte 8: hour
+        now.minute,                          # byte 9: minute
+        now.second,                          # byte 10: second
+    ])
+    checksum = calc_checksum(payload)
+    return MAGIC + payload + bytes([checksum])
+
+
+def build_holiday_activate(days: int, preheat_enabled: bool = True) -> list[bytes]:
+    """Build complete Holiday mode activation sequence.
+
+    Returns a list of packets that should be sent in order:
+    1. Days query to set duration
+    2. Special mode command to activate
+
+    Args:
+        days: Number of days for Holiday mode (typically 1-30)
+        preheat_enabled: Whether to enable preheat during Holiday
+
+    Returns:
+        List of packet bytes to send in sequence
+    """
+    return [
+        build_holiday_days_query(days),
+        build_special_mode_command(preheat_enabled),
+    ]
+
+
+def build_night_ventilation_activate(preheat_enabled: bool = True) -> bytes:
+    """Build Night Ventilation mode activation command.
+
+    Night Ventilation provides increased ventilation overnight.
+
+    Args:
+        preheat_enabled: Whether to enable preheat during the mode
+
+    Returns:
+        Complete packet bytes
+    """
+    return build_special_mode_command(preheat_enabled)
+
+
+def build_fixed_airflow_activate(preheat_enabled: bool = True) -> bytes:
+    """Build Fixed Air Flow mode activation command.
+
+    Fixed Air Flow maintains a constant ventilation rate.
+
+    Args:
+        preheat_enabled: Whether to enable preheat during the mode
+
+    Returns:
+        Complete packet bytes
+    """
+    return build_special_mode_command(preheat_enabled)
 
 
 def build_settings_packet(
