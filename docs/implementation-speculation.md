@@ -148,10 +148,41 @@ VisionAir's command processing likely follows this exact structure — matching 
 - What differentiates Holiday/Night Vent/Fixed Air Flow commands? (May be state machine on device)
 - Is there a bootloader for OTA updates? (PSoC supports this)
 
+### 7. Temperature Measurement Pattern
+
+Day005 Health Thermometer shows how PSoC measures temperature:
+
+```c
+// Measure thermistor resistance with offset removal
+thermistorResistance = Thermistor_GetResistance(
+    (referenceVoltage - offsetVoltage),
+    (thermistorVoltage - offsetVoltage));
+
+// Convert to temperature (returns value * 100 for precision)
+temperature = Thermistor_GetTemperature(thermistorResistance);
+temperature = temperature / 100;  // Remove decimal places
+```
+
+VisionAir's whole-degree temperature readings (Probe 1, Probe 2, Remote) likely use similar ADC-based thermistor measurement, stored as uint8 (0-255°C range, only positive temps needed for HVAC).
+
+## Summary of VisionAir Implementation Model
+
+Based on PSoC-4-BLE code analysis:
+
+1. **Based on Day003 Custom Profile** — Identical handles (0x000e, 0x0013, 0x000f)
+2. **Struct serialization** — `CYBLE_CYPACKED` structs sent via `CyBle_GattsNotification()`
+3. **Event-driven command processing** — `CustomEventHandler()` matches attribute handles
+4. **WDT-based timekeeping** — Explains timestamp sync in special mode commands
+5. **Thermistor ADC measurement** — Standard PSoC pattern for temperature probes
+6. **UART heritage** — Magic bytes + XOR checksum from pre-BLE serial protocol
+
 ## Resources
 
 - [Infineon PSoC-4-BLE GitHub](https://github.com/Infineon/PSoC-4-BLE)
 - [Day003 Custom Profile Example](https://github.com/Infineon/PSoC-4-BLE/tree/master/100_Projects_in_100_Days/Day003_Custom_Profile_CapSense_RGB_LED)
+- [Day005 Health Thermometer](https://github.com/Infineon/PSoC-4-BLE/tree/master/100_Projects_in_100_Days/Day005_Health_Thermometer)
+- [Day033 BLE RTC](https://github.com/Infineon/PSoC-4-BLE/tree/master/100_Projects_in_100_Days/Day033_BLE_RTC)
+- [Day046 Cycling Sensor](https://github.com/Infineon/PSoC-4-BLE/tree/master/100_Projects_in_100_Days/Day046_Cycling_Sensor) (packed struct example)
 - [AN91162 - Creating a BLE Custom Profile](https://www.infineon.com/dgdl/Infineon-AN91162_Creating_a_BLE_Custom_Profile-ApplicationNotes-v05_00-EN.pdf)
 - [Cypress PSoC 6 BLE Middleware API Reference](https://infineon.github.io/bless/ble_api_reference_manual/html/index.html)
 - [IoT Expert PSoC4 BLE Custom Profile Tutorial](https://iotexpert.com/psoc4-ble-central-custom-profile-wled-capsense/)
