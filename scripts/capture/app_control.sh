@@ -565,74 +565,117 @@ pull_btsnoop() {
     fi
 }
 
-# Capture with app values - records screenshots and prompts for manual value entry
-# This ensures we can correlate packet bytes with actual displayed values
-capture_with_values() {
-    local capture_name="${1:-capture}"
-    local timestamp=$(date +%Y%m%d_%H%M%S)
-    local capture_dir="/tmp/vmi_btlogs/${capture_name}_${timestamp}"
+# Interactive capture session with timestamped checkpoints
+# Each checkpoint records: timestamp, screenshot, app values
+# This allows correlation between specific packets and displayed values
+capture_session() {
+    local session_name="${1:-session}"
+    local session_start=$(date +%Y%m%d_%H%M%S)
+    local capture_dir="/tmp/vmi_btlogs/${session_name}_${session_start}"
+    local checkpoint_num=0
     mkdir -p "$capture_dir"
 
-    echo "=== Capture Session: ${capture_name}_${timestamp} ==="
+    echo "=== Capture Session: ${session_name}_${session_start} ==="
     echo "Output directory: $capture_dir"
     echo ""
-
-    # Step 1: Navigate to measurements screen and capture current state
-    echo "Step 1: Capturing current measurements screen..."
-    goto_measurements_full
-    screenshot "$capture_dir/measurements.png"
+    echo "Commands during session:"
+    echo "  c / checkpoint  - Record current values (timestamp + screenshot + values)"
+    echo "  s / screenshot  - Just take a screenshot"
+    echo "  q / quit        - End session and pull btsnoop logs"
+    echo "  help            - Show this help"
+    echo ""
+    echo "Start time: $(date -Iseconds)"
+    echo "$session_start" > "$capture_dir/session_start.txt"
     echo ""
 
-    # Step 2: Prompt user to record values from screenshot
-    echo "=== IMPORTANT: Record the values shown in the app ==="
-    echo "Please check $capture_dir/measurements.png and enter the values below."
-    echo "(Press Enter to skip any value you can't see)"
-    echo ""
+    while true; do
+        read -p "capture> " cmd args
+        case "$cmd" in
+            c|checkpoint)
+                checkpoint_num=$((checkpoint_num + 1))
+                local ts=$(date -Iseconds)
+                local ts_file=$(date +%H%M%S)
+                echo ""
+                echo "=== Checkpoint $checkpoint_num at $ts ==="
 
-    read -p "Remote temperature (°C): " remote_temp
-    read -p "Remote humidity (%): " remote_humidity
-    read -p "Probe 1 temperature (°C): " probe1_temp
-    read -p "Probe 1 humidity (%): " probe1_humidity
-    read -p "Probe 2 temperature (°C): " probe2_temp
-    read -p "Airflow mode (low/medium/high): " airflow_mode
-    read -p "Boost active (yes/no): " boost_active
-    read -p "Notes: " notes
+                # Take screenshot
+                local screenshot_file="$capture_dir/checkpoint_${checkpoint_num}_${ts_file}.png"
+                adb_cmd exec-out screencap -p > "$screenshot_file"
+                echo "Screenshot: $screenshot_file"
 
-    # Save values to metadata file
-    cat > "$capture_dir/app_values.txt" << METADATA
-# VMI App Values - ${timestamp}
-# Screenshot: measurements.png
+                # Record values
+                echo "Enter values shown in app (Enter to skip):"
+                read -p "  Remote temp (°C): " remote_temp
+                read -p "  Remote humidity (%): " remote_humidity
+                read -p "  Probe1 temp (°C): " probe1_temp
+                read -p "  Probe1 humidity (%): " probe1_humidity
+                read -p "  Probe2 temp (°C): " probe2_temp
+                read -p "  Airflow (low/med/high): " airflow
+                read -p "  Notes: " notes
 
-remote_temp=${remote_temp}
-remote_humidity=${remote_humidity}
-probe1_temp=${probe1_temp}
-probe1_humidity=${probe1_humidity}
-probe2_temp=${probe2_temp}
-airflow_mode=${airflow_mode}
-boost_active=${boost_active}
-notes=${notes}
-METADATA
+                # Append to checkpoints file
+                cat >> "$capture_dir/checkpoints.txt" << CHECKPOINT
 
-    echo ""
-    echo "Values saved to $capture_dir/app_values.txt"
-    echo ""
+[checkpoint_$checkpoint_num]
+timestamp=$ts
+screenshot=checkpoint_${checkpoint_num}_${ts_file}.png
+remote_temp=$remote_temp
+remote_humidity=$remote_humidity
+probe1_temp=$probe1_temp
+probe1_humidity=$probe1_humidity
+probe2_temp=$probe2_temp
+airflow=$airflow
+notes=$notes
+CHECKPOINT
+                echo "Checkpoint $checkpoint_num saved."
+                echo ""
+                ;;
 
-    # Step 3: Pull btsnoop logs
-    echo "Step 3: Pulling BT snoop logs..."
-    adb_cmd bugreport "$capture_dir/bugreport.zip"
-    unzip -jo "$capture_dir/bugreport.zip" "*/btsnooz_hci.log" -d "$capture_dir/" 2>/dev/null || \
-    unzip -jo "$capture_dir/bugreport.zip" "*/btsnoop_hci.log" -d "$capture_dir/" 2>/dev/null || true
-    mv "$capture_dir/btsnooz_hci.log" "$capture_dir/btsnoop.log" 2>/dev/null || \
-    mv "$capture_dir/btsnoop_hci.log" "$capture_dir/btsnoop.log" 2>/dev/null || true
+            s|screenshot)
+                local ts_file=$(date +%H%M%S)
+                local screenshot_file="$capture_dir/screenshot_${ts_file}.png"
+                adb_cmd exec-out screencap -p > "$screenshot_file"
+                echo "Screenshot: $screenshot_file"
+                ;;
 
-    echo ""
-    echo "=== Capture Complete ==="
-    echo "Directory: $capture_dir"
-    echo "Contents:"
-    ls -la "$capture_dir"
-    echo ""
-    echo "To analyze: python scripts/capture/extract_packets.py $capture_dir/btsnoop.log"
-    echo "App values: cat $capture_dir/app_values.txt"
+            q|quit|exit)
+                echo ""
+                echo "Ending session at $(date -Iseconds)"
+                echo ""
+                echo "Pulling btsnoop logs..."
+                adb_cmd bugreport "$capture_dir/bugreport.zip"
+                unzip -jo "$capture_dir/bugreport.zip" "*/btsnooz_hci.log" -d "$capture_dir/" 2>/dev/null || \
+                unzip -jo "$capture_dir/bugreport.zip" "*/btsnoop_hci.log" -d "$capture_dir/" 2>/dev/null || true
+                mv "$capture_dir/btsnooz_hci.log" "$capture_dir/btsnoop.log" 2>/dev/null || \
+                mv "$capture_dir/btsnoop_hci.log" "$capture_dir/btsnoop.log" 2>/dev/null || true
+
+                echo ""
+                echo "=== Session Complete ==="
+                echo "Directory: $capture_dir"
+                echo "Checkpoints: $checkpoint_num"
+                ls -la "$capture_dir"
+                echo ""
+                echo "To analyze with checkpoints:"
+                echo "  python scripts/capture/extract_packets.py $capture_dir/btsnoop.log --checkpoints $capture_dir/checkpoints.txt"
+                break
+                ;;
+
+            help|h|\?)
+                echo "Commands:"
+                echo "  c / checkpoint  - Record timestamp + screenshot + values"
+                echo "  s / screenshot  - Just take a screenshot"
+                echo "  q / quit        - End session and pull logs"
+                ;;
+
+            "")
+                # Empty input, just continue
+                ;;
+
+            *)
+                echo "Unknown command: $cmd (try 'help')"
+                ;;
+        esac
+    done
 }
 
 full_connect_sequence() {
@@ -684,7 +727,7 @@ case "${1:-help}" in
     btstart)    start_btsnoop ;;
     btsnoop-enable) enable_btsnoop_full ;;
     btpull)     pull_btsnoop ;;
-    capture)    capture_with_values "$2" ;;
+    capture)    capture_session "$2" ;;
     connect)    full_connect_sequence ;;
     fan-min)    tap_fan_min ;;
     fan-mid)    tap_fan_mid ;;
@@ -756,8 +799,9 @@ case "${1:-help}" in
         echo "  btsnoop-enable - Enable FULL BT snoop logging (via Developer Options)"
         echo "  btstart     - Enable BT snoop logging (via settings command only)"
         echo "  btpull      - Pull BT snoop logs"
-        echo "  capture [name] - Full capture with app value recording"
-        echo "                   Screenshots measurements, prompts for values, pulls logs"
-        echo "                   Creates timestamped directory with btsnoop.log + app_values.txt"
+        echo "  capture [name] - Interactive capture session with checkpoints"
+        echo "                   Type 'c' to record: timestamp + screenshot + app values"
+        echo "                   Type 'q' to end session and pull btsnoop logs"
+        echo "                   Checkpoints have ISO timestamps for packet correlation"
         ;;
 esac

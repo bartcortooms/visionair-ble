@@ -56,20 +56,28 @@ def parse_btsnoop(filepath: str) -> list:
 
 
 def find_vmi_packets(records: list) -> dict:
-    """Find all VMI packets in the records.
+    """Find all VMI packets in the records with timestamps.
 
     Returns dict with:
     - writes: list of command writes to 0x0013
     - notifies: list of notifications from 0x000e
+    - raw_packets: all a5b6 packets found
     """
-    # Concatenate all raw data
-    all_data = b''.join(r['data'] for r in records)
-
     result = {
-        'writes': [],      # Commands TO device (handle 0x0013)
-        'notifies': [],    # Notifications FROM device (handle 0x000e)
-        'raw_packets': []  # All a5b6 packets found
+        'writes': [],
+        'notifies': [],
+        'raw_packets': []
     }
+
+    # Build index: for each byte position in concatenated data, track which record it came from
+    byte_to_record = []
+    all_data_parts = []
+    for rec_idx, rec in enumerate(records):
+        for _ in rec['data']:
+            byte_to_record.append(rec_idx)
+        all_data_parts.append(rec['data'])
+
+    all_data = b''.join(all_data_parts)
 
     # Find all a5b6 markers
     pos = 0
@@ -98,12 +106,26 @@ def find_vmi_packets(records: list) -> dict:
             pkt_data = all_data[idx:idx + pkt_len]
             pkt_num += 1
 
+            # Get timestamp from the record this packet started in
+            rec_idx = byte_to_record[idx] if idx < len(byte_to_record) else 0
+            # btsnoop timestamp: microseconds since 0000-01-01, convert to datetime
+            ts_raw = records[rec_idx]['timestamp']
+            # btsnoop epoch is 0000-01-01, offset to unix epoch
+            ts_unix = (ts_raw - 0x00dcddb30f2f8000) / 1000000.0
+            try:
+                ts_dt = datetime.fromtimestamp(ts_unix)
+                ts_iso = ts_dt.isoformat()
+            except (ValueError, OSError):
+                ts_iso = f"raw:{ts_raw}"
+
             pkt_info = {
                 'num': pkt_num,
                 'type': msg_type,
                 'type_name': get_type_name(msg_type),
                 'hex': pkt_data.hex(),
-                'len': len(pkt_data)
+                'len': len(pkt_data),
+                'timestamp': ts_iso,
+                'timestamp_raw': ts_raw,
             }
 
             result['raw_packets'].append(pkt_info)
@@ -117,6 +139,51 @@ def find_vmi_packets(records: list) -> dict:
         pos = idx + 1
 
     return result
+
+
+def parse_checkpoints(filepath: str) -> list:
+    """Parse checkpoints.txt file into list of checkpoint dicts."""
+    checkpoints = []
+    current = None
+
+    with open(filepath, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith('[checkpoint_'):
+                if current:
+                    checkpoints.append(current)
+                current = {'id': line[1:-1]}
+            elif '=' in line and current is not None:
+                key, val = line.split('=', 1)
+                current[key] = val
+
+    if current:
+        checkpoints.append(current)
+
+    return checkpoints
+
+
+def find_packets_near_checkpoint(packets: list, checkpoint_ts: str, window_seconds: int = 10) -> list:
+    """Find packets within window_seconds of a checkpoint timestamp."""
+    try:
+        # Parse ISO timestamp
+        cp_dt = datetime.fromisoformat(checkpoint_ts)
+    except ValueError:
+        return []
+
+    matching = []
+    for pkt in packets:
+        try:
+            pkt_dt = datetime.fromisoformat(pkt['timestamp'])
+            diff = abs((pkt_dt - cp_dt).total_seconds())
+            if diff <= window_seconds:
+                matching.append((pkt, diff))
+        except (ValueError, KeyError):
+            continue
+
+    # Sort by time difference (closest first)
+    matching.sort(key=lambda x: x[1])
+    return [m[0] for m in matching]
 
 
 def get_type_name(msg_type: int) -> str:
@@ -280,12 +347,56 @@ def print_summary(packets: dict, output_format: str = 'text'):
                     print(f"  ** Found {val} at {off} **")
 
 
+def print_checkpoint_correlation(packets: dict, checkpoints: list, window: int = 10):
+    """Print packets correlated with each checkpoint."""
+    print(f"\n{'='*60}")
+    print(f"CHECKPOINT CORRELATION (window: ±{window}s)")
+    print(f"{'='*60}")
+
+    for cp in checkpoints:
+        print(f"\n--- {cp['id']} ---")
+        print(f"Timestamp: {cp.get('timestamp', '?')}")
+
+        # Show recorded app values
+        for key in ['remote_temp', 'remote_humidity', 'probe1_temp', 'probe1_humidity', 'probe2_temp', 'airflow']:
+            if cp.get(key):
+                print(f"  App {key}: {cp[key]}")
+
+        if cp.get('notes'):
+            print(f"  Notes: {cp['notes']}")
+
+        # Find nearby packets
+        ts = cp.get('timestamp')
+        if not ts:
+            print("  (no timestamp)")
+            continue
+
+        nearby = find_packets_near_checkpoint(packets['raw_packets'], ts, window)
+        status_nearby = [p for p in nearby if p['type'] == 0x01]
+
+        if not status_nearby:
+            print(f"  No STATUS packets within ±{window}s")
+            continue
+
+        print(f"  Found {len(status_nearby)} STATUS packets nearby:")
+        for pkt in status_nearby[:3]:  # Show up to 3
+            decoded = decode_status_packet(pkt['hex'])
+            print(f"    [{pkt['timestamp']}]")
+            print(f"      Byte 4: {decoded.get('bytes_0_10', [0]*5)[4]} (current 'humidity')")
+            print(f"      Byte 60: {decoded['byte60']} (÷2 = {decoded['byte60_div2']:.1f}%)")
+            print(f"      Remote temp: {decoded['remote_temp']}°C")
+            print(f"      Probe1 temp: {decoded['probe1_temp']}°C")
+            print(f"      Sensor: {decoded['sensor_selector']}")
+
+
 def main():
     import argparse
     parser = argparse.ArgumentParser(description='Extract VMI packets from btsnoop log')
     parser.add_argument('btsnoop_file', help='Path to btsnoop log file')
     parser.add_argument('--json', action='store_true', help='Output as JSON')
     parser.add_argument('--status-hex', action='store_true', help='Output all status packet hex')
+    parser.add_argument('--checkpoints', help='Path to checkpoints.txt for correlation')
+    parser.add_argument('--window', type=int, default=10, help='Checkpoint correlation window in seconds (default: 10)')
     args = parser.parse_args()
 
     records = parse_btsnoop(args.btsnoop_file)
@@ -306,6 +417,14 @@ def main():
         print_summary(packets, 'json')
     else:
         print_summary(packets)
+
+    # If checkpoints provided, show correlation
+    if args.checkpoints:
+        checkpoints = parse_checkpoints(args.checkpoints)
+        if checkpoints:
+            print_checkpoint_correlation(packets, checkpoints, args.window)
+        else:
+            print("\nNo checkpoints found in file", file=sys.stderr)
 
 
 if __name__ == '__main__':
