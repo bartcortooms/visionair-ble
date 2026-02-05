@@ -120,7 +120,7 @@ Key commands:
 
 ## Adapting to App UI Updates
 
-`vmictl.py` uses selector-based UI targeting via `scripts/capture/vmi_ui_selectors.toml`,
+`vmictl.py` uses selector-based UI targeting via `scripts/capture/vmictl_lib/ui_selectors.toml`,
 not hardcoded screen coordinates.
 
 When the app UI changes:
@@ -130,7 +130,7 @@ When the app UI changes:
    ./scripts/capture/vmictl.py ui > /tmp/vmi_ui.xml
    ```
 2. Find updated labels/content descriptions in the XML.
-3. Update relevant entries in `scripts/capture/vmi_ui_selectors.toml`:
+3. Update relevant entries in `scripts/capture/vmictl_lib/ui_selectors.toml`:
    - `screens.*.requires_desc` for screen fingerprints
    - `selectors.*.labels` for tappable targets
 4. Re-run smoke commands:
@@ -166,5 +166,5 @@ Some phones only support filtered captures by default. Check:
 
 If navigation/actions hit wrong elements:
 1. Dump UI tree: `./scripts/capture/vmictl.py ui > /tmp/vmi_ui.xml`
-2. Update selectors in `scripts/capture/vmi_ui_selectors.toml`
+2. Update selectors in `scripts/capture/vmictl_lib/ui_selectors.toml`
 3. Re-run navigation smoke commands (`menu`, `measurements-full`, `sensors`)

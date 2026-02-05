@@ -7,7 +7,7 @@ import time
 import zipfile
 from pathlib import Path
 
-from vmi_ui import VMIUI
+from .ui import VMIUI
 
 
 class VMICtl:
