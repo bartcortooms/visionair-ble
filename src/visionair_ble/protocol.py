@@ -30,7 +30,7 @@ Use PROBE_SENSORS packet or get_sensors() for accurate probe readings.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from enum import IntEnum
 from typing import NamedTuple
 
 
@@ -147,7 +147,7 @@ class RequestParam:
     PROBE_SENSORS = 0x07        # Request probe sensor readings
     SENSOR_SELECT = 0x18        # Set sensor cycle
     BOOST = 0x19                # Activate BOOST
-    HOLIDAY_DAYS = 0x1A         # Query holiday days remaining
+    REQUEST_1A = 0x1A           # Observed request, purpose unknown
     HOLIDAY_STATUS = 0x2C       # Query holiday mode status
 
 
@@ -160,16 +160,19 @@ class SettingsMode:
     SCHEDULE = 0x05             # Schedule on/off
 
 
-class AirflowLevel:
-    """Airflow mode protocol values.
+class AirflowLevel(IntEnum):
+    """Airflow mode identifiers.
 
-    These are internal protocol identifiers, NOT actual m³/h values.
-    The actual m³/h is calculated from configured_volume × ACH rate.
+    These are abstract identifiers for airflow modes, not actual m³/h values.
+    The actual m³/h is calculated from configured_volume × ACH rate:
+    - LOW: volume × 0.36
+    - MEDIUM: volume × 0.45
+    - HIGH: volume × 0.55
     """
 
-    LOW = 131       # Protocol identifier for LOW mode
-    MEDIUM = 164    # Protocol identifier for MEDIUM mode
-    HIGH = 201      # Protocol identifier for HIGH mode
+    LOW = 1
+    MEDIUM = 2
+    HIGH = 3
 
 
 # Backward compatibility aliases
@@ -532,13 +535,13 @@ def build_boost_command(enable: bool) -> bytes:
 #
 # What we know:
 # - All special modes use Settings command with byte 7 = 0x04
-# - Bytes 8-9-10 encode HH:MM:SS timestamp
-# - Holiday mode: days are set via query 0x1a before activation
+# - Byte 8 is a sequence counter that increments per command
+# - Bytes 9-10 encode mode-specific data (Holiday end date is time-dependent)
 #
 # What we DON'T know:
-# - How the device distinguishes Holiday vs Night Vent vs Fixed Air Flow
+# - The encoding algorithm for bytes 9-10
 # - How to deactivate special modes (no OFF packets captured)
-# - Whether Night Vent and Fixed Air Flow require different preceding queries
+# - Fixed Air Flow encoding
 #
 # These functions require _experimental=True flag to acknowledge the risks.
 
@@ -559,17 +562,13 @@ def _require_experimental(flag: bool, feature: str) -> None:
         )
 
 
-def build_holiday_days_query(days: int, *, _experimental: bool = False) -> bytes:
-    """Build query to set Holiday mode duration.
+def build_request_1a(*, _experimental: bool = False) -> bytes:
+    """Build observed request 0x1a (purpose unknown).
 
-    ⚠️  EXPERIMENTAL: Holiday mode activation sequence is not fully verified.
-    We don't know how to deactivate Holiday mode once activated.
-
-    This should be sent before build_holiday_activate() to set
-    the number of days the device will run in Holiday mode.
+    ⚠️  EXPERIMENTAL: The purpose of request param 0x1a is unknown.
+    Do not assume it sets Holiday days.
 
     Args:
-        days: Number of days (typically 1-30)
         _experimental: Must be True to use this function
 
     Returns:
@@ -578,8 +577,8 @@ def build_holiday_days_query(days: int, *, _experimental: bool = False) -> bytes
     Raises:
         ExperimentalFeatureError: If _experimental is not True
     """
-    _require_experimental(_experimental, "Holiday mode")
-    return build_request(RequestParam.HOLIDAY_DAYS, value=days, extended=True)
+    _require_experimental(_experimental, "Request 0x1a")
+    return build_request(RequestParam.REQUEST_1A, extended=True)
 
 
 def build_holiday_status_query() -> bytes:
@@ -594,33 +593,13 @@ def build_holiday_status_query() -> bytes:
     return build_request(RequestParam.HOLIDAY_STATUS, extended=True)
 
 
-def _build_special_mode_command(preheat_enabled: bool = True) -> bytes:
-    """Build a special mode activation command (internal use).
-
-    This is the shared packet structure for Holiday, Night Ventilation,
-    and Fixed Air Flow modes. The command includes the current time
-    as HH:MM:SS timestamp in bytes 8-9-10.
-
-    Args:
-        preheat_enabled: Whether to enable preheat during the mode
-
-    Returns:
-        Complete packet bytes
-    """
-    now = datetime.now()
-    payload = bytes([
-        PacketType.SETTINGS,
-        0x06,
-        0x06,
-        0x1A,
-        0x02 if preheat_enabled else 0x00,  # byte 6: preheat
-        SettingsMode.SPECIAL_MODE,           # byte 7: special mode flag
-        now.hour,                            # byte 8: hour
-        now.minute,                          # byte 9: minute
-        now.second,                          # byte 10: second
-    ])
-    checksum = calc_checksum(payload)
-    return MAGIC + payload + bytes([checksum])
+def _raise_special_mode_unsupported(feature: str, *, _experimental: bool) -> None:
+    _require_experimental(_experimental, feature)
+    raise ExperimentalFeatureError(
+        f"{feature} encoding is unknown. "
+        "Byte 8 is a sequence counter and bytes 9-10 are mode-specific. "
+        "We cannot generate valid packets without the encoding algorithm."
+    )
 
 
 def build_holiday_activate(
@@ -628,11 +607,8 @@ def build_holiday_activate(
 ) -> list[bytes]:
     """Build complete Holiday mode activation sequence.
 
-    ⚠️  EXPERIMENTAL: We don't know how to deactivate Holiday mode once activated.
-
-    Returns a list of packets that should be sent in order:
-    1. Days query to set duration
-    2. Special mode command to activate
+    ⚠️  EXPERIMENTAL: The Holiday mode encoding is not known.
+    This function is intentionally unsupported until the algorithm is decoded.
 
     Args:
         days: Number of days for Holiday mode (typically 1-30)
@@ -645,11 +621,8 @@ def build_holiday_activate(
     Raises:
         ExperimentalFeatureError: If _experimental is not True
     """
-    _require_experimental(_experimental, "Holiday mode")
-    return [
-        build_holiday_days_query(days, _experimental=True),
-        _build_special_mode_command(preheat_enabled),
-    ]
+    _raise_special_mode_unsupported("Holiday mode", _experimental=_experimental)
+    return []
 
 
 def build_night_ventilation_activate(
@@ -657,9 +630,8 @@ def build_night_ventilation_activate(
 ) -> bytes:
     """Build Night Ventilation mode activation command.
 
-    ⚠️  EXPERIMENTAL: We don't know how the device distinguishes this from
-    Holiday mode or Fixed Air Flow. The packet structure appears identical.
-    We also don't know how to deactivate this mode.
+    ⚠️  EXPERIMENTAL: Encoding is unknown. Byte 8 is a sequence counter and
+    bytes 9-10 are mode-specific.
 
     Args:
         preheat_enabled: Whether to enable preheat during the mode
@@ -671,8 +643,8 @@ def build_night_ventilation_activate(
     Raises:
         ExperimentalFeatureError: If _experimental is not True
     """
-    _require_experimental(_experimental, "Night Ventilation mode")
-    return _build_special_mode_command(preheat_enabled)
+    _raise_special_mode_unsupported("Night Ventilation mode", _experimental=_experimental)
+    return b""
 
 
 def build_fixed_airflow_activate(
@@ -680,9 +652,8 @@ def build_fixed_airflow_activate(
 ) -> bytes:
     """Build Fixed Air Flow mode activation command.
 
-    ⚠️  EXPERIMENTAL: We don't know how the device distinguishes this from
-    Holiday mode or Night Ventilation. The packet structure appears identical.
-    We also don't know how to deactivate this mode.
+    ⚠️  EXPERIMENTAL: Encoding is unknown. Byte 8 is a sequence counter and
+    bytes 9-10 are mode-specific.
 
     Args:
         preheat_enabled: Whether to enable preheat during the mode
@@ -694,8 +665,8 @@ def build_fixed_airflow_activate(
     Raises:
         ExperimentalFeatureError: If _experimental is not True
     """
-    _require_experimental(_experimental, "Fixed Air Flow mode")
-    return _build_special_mode_command(preheat_enabled)
+    _raise_special_mode_unsupported("Fixed Air Flow mode", _experimental=_experimental)
+    return b""
 
 
 def build_settings_packet(
@@ -775,17 +746,18 @@ def parse_status(data: bytes) -> DeviceStatus | None:
             airflow_high = round(configured_volume * 0.55)
 
     # Determine current airflow mode and value from indicator
+    # airflow is 0 if configured_volume is unavailable (we can't calculate m³/h)
     airflow_mode = "unknown"
     airflow = 0
     if airflow_indicator == AirflowIndicator.LOW:
         airflow_mode = "low"
-        airflow = airflow_low or AirflowLevel.LOW
+        airflow = airflow_low or 0
     elif airflow_indicator == AirflowIndicator.MEDIUM:
         airflow_mode = "medium"
-        airflow = airflow_medium or AirflowLevel.MEDIUM
+        airflow = airflow_medium or 0
     elif airflow_indicator == AirflowIndicator.HIGH:
         airflow_mode = "high"
-        airflow = airflow_high or AirflowLevel.HIGH
+        airflow = airflow_high or 0
 
     # Humidity from remote
     humidity = data[DeviceStateOffset.HUMIDITY] if len(data) > DeviceStateOffset.HUMIDITY else None
@@ -846,7 +818,7 @@ def parse_sensors(data: bytes) -> SensorData | None:
     Returns:
         SensorData object or None if packet is invalid
     """
-    if len(data) < 14 or data[:2] != MAGIC or data[ProbeProbeSensorOffset.TYPE] != PacketType.PROBE_SENSORS:
+    if len(data) < 14 or data[:2] != MAGIC or data[ProbeSensorOffset.TYPE] != PacketType.PROBE_SENSORS:
         return None
 
     return SensorData(

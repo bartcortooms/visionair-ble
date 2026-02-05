@@ -188,21 +188,17 @@ Structure: `a5b6 1a 06 06 1a <preheat> <mode> <temp> <af1> <af2> <checksum>`
 > **⚠️ EXPERIMENTAL:** These features have significant gaps in protocol understanding.
 > See [Open Questions](#open-questions) for details. Use with caution.
 
-All special modes use the Settings Command with byte 7 = `0x04`. Bytes 8-9-10 encode an HH:MM:SS timestamp.
+All special modes use the Settings Command with byte 7 = `0x04`.
 
-**Why timestamps? (high confidence):** The PSoC BLE chip lacks a battery-backed RTC — it uses a
-Watchdog Timer for timekeeping which resets on power loss. The timestamp likely serves to:
-1. Sync the device's internal clock with the app
-2. Provide a reference point for calculating mode expiration
+**What we know (high confidence):**
+- **Byte 8 is a sequence counter** that increments with each special-mode command.
+- **Bytes 9-10 are mode-specific** and time-dependent for Holiday mode (encoded end date).
+- The same `0x04` structure is used for Holiday and Night Ventilation.
 
-**Mode differentiation hypothesis (medium confidence):** Holiday, Night Ventilation, and Fixed Air
-Flow all send identical `0x04` packets. Based on PSoC's event-driven state machine pattern, the
-device likely uses **preceding query packets** to select which mode to activate:
-- Query `0x1a` (days) → selects Holiday mode
-- Query `0x1b` → may select Fixed Air Flow mode (one capture observed)
-- Unknown query → may select Night Ventilation mode
-
-The `0x04` command then activates whatever mode was most recently selected.
+**What we don't know:**
+- The encoding algorithm for bytes 9-10
+- Fixed Air Flow encoding
+- How to deactivate special modes (no OFF packets captured)
 
 #### Holiday Mode
 
@@ -216,25 +212,13 @@ The `0x04` command then activates whatever mode was most recently selected.
 - Whether the days value persists or needs to be sent every time
 - How the device reports remaining Holiday time
 
-**Activation sequence (observed):**
+**Activation (observed):**
 
-1. **Set days** — Query 0x1a with days value:
-   ```
-   a5b6 10 06 05 1a 00 00 00 <days> <checksum>
-   ```
+- Settings command with byte 7 = `0x04`
+- Byte 8 increments (sequence counter)
+- Bytes 9-10 encode the end date in a time-dependent way
 
-2. **Activate** — Settings command with current time:
-   ```
-   a5b6 1a 06 06 1a <preheat> 04 <hour> <min> <sec> <checksum>
-   ```
-
-**Days query examples:**
-
-| Days | Packet |
-|------|--------|
-| 3 | `a5b61006051a000000030a` |
-| 7 | `a5b61006051a000000070e` |
-| 14 | `a5b61006051a0000000e07` |
+We do not have a valid encoder yet, so we cannot generate correct Holiday commands.
 
 **Holiday status query (param 0x2c):**
 ```
@@ -439,15 +423,14 @@ The volume is configured during professional installation based on the ventilate
 | Purevent Vision'R | 350 m³/h | Houses |
 | Pro 1000 | 1000 m³/h | Commercial |
 
-### 6.3 Special Mode Timestamp Encoding
+### 6.3 Special Mode Encoding
 
-Special mode commands (byte 7 = 0x04) encode the current time in bytes 8-9-10:
+Special mode commands (byte 7 = 0x04) use:
 
-| Byte | Value |
-|------|-------|
-| 8 | Hour (0-23) |
-| 9 | Minute (0-59) |
-| 10 | Second (0-59) |
+| Byte | Meaning |
+|------|---------|
+| 8 | Sequence counter (increments per command) |
+| 9-10 | Mode-specific encoded values (Holiday uses time-dependent end date) |
 
 ## 7. Library
 
@@ -478,11 +461,9 @@ See [implementation-status.md](implementation-status.md) for feature implementat
 ### Open Questions
 
 **Special Modes:**
-- How does the device distinguish Holiday vs Night Vent vs Fixed Air Flow modes?
-  - *Partial answer:* Likely via preceding query packets (state machine). See [Special Modes](#43-special-modes).
-- How to explicitly deactivate special modes (toggle OFF behavior)?
-- Does Holiday mode require the days query every time, or is it stored?
-  - *Hypothesis:* Probably needs to be sent each time — PSoC examples don't show persistent state storage for such values.
+- How to decode bytes 9-10 for Holiday and Night Ventilation
+- Fixed Air Flow encoding
+- How to explicitly deactivate special modes (toggle OFF behavior)
 
 **Schedule:**
 - Schedule Mode 3 (HIGH) byte value — not captured

@@ -52,6 +52,9 @@ The tests are read-only and do not modify device settings.
 
 This is a reverse-engineered protocol. We have no vendor documentation.
 All names and interpretations are our own based on observed behavior.
+The VMI mobile app is the only authoritative source for protocol behavior.
+Always verify assumptions by capturing and analyzing VMI app traffic before
+changing protocol interpretations or implementation details.
 
 When naming protocol elements:
 - Use names that describe actual content/behavior

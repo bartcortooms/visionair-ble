@@ -8,18 +8,15 @@ from visionair_ble.protocol import (
     AIRFLOW_MEDIUM,
     AirflowLevel,
     ExperimentalFeatureError,
-    PacketType,
-    SettingsMode,
     build_boost_command,
     build_fixed_airflow_activate,
     build_holiday_activate,
-    build_holiday_days_query,
     build_holiday_status_query,
     build_night_ventilation_activate,
+    build_request_1a,
     build_sensor_select_request,
     build_settings_packet,
     build_status_request,
-    _build_special_mode_command,
     calc_checksum,
     is_visionair_device,
     parse_status,
@@ -267,100 +264,52 @@ class TestDeviceIdentification:
 class TestSpecialModes:
     """Tests for Holiday, Night Ventilation, and Fixed Air Flow modes.
 
-    These are experimental features that require _experimental=True flag.
+    These features have incomplete protocol understanding and always raise errors.
     """
 
-    # --- Experimental flag requirement tests ---
-
-    def test_holiday_days_query_requires_experimental_flag(self):
-        """Test that Holiday days query raises without experimental flag."""
+    def test_request_1a_requires_experimental_flag(self):
+        """Test that Request 0x1a raises without experimental flag."""
         with pytest.raises(ExperimentalFeatureError, match="experimental"):
-            build_holiday_days_query(7)
+            build_request_1a()
+
+    def test_request_1a_with_experimental_flag(self):
+        """Test Request 0x1a packet with experimental flag."""
+        packet = build_request_1a(_experimental=True)
+        assert packet == bytes.fromhex("a5b61006051a0000000009")
+        assert verify_checksum(packet)
 
     def test_holiday_activate_requires_experimental_flag(self):
         """Test that Holiday activate raises without experimental flag."""
         with pytest.raises(ExperimentalFeatureError, match="experimental"):
             build_holiday_activate(7)
 
+    def test_holiday_activate_unsupported(self):
+        """Test that Holiday activate is unsupported even with experimental flag."""
+        with pytest.raises(ExperimentalFeatureError, match="encoding is unknown"):
+            build_holiday_activate(7, _experimental=True)
+
     def test_night_ventilation_requires_experimental_flag(self):
         """Test that Night Ventilation raises without experimental flag."""
         with pytest.raises(ExperimentalFeatureError, match="experimental"):
             build_night_ventilation_activate()
+
+    def test_night_ventilation_unsupported(self):
+        """Test that Night Ventilation is unsupported even with experimental flag."""
+        with pytest.raises(ExperimentalFeatureError, match="encoding is unknown"):
+            build_night_ventilation_activate(_experimental=True)
 
     def test_fixed_airflow_requires_experimental_flag(self):
         """Test that Fixed Air Flow raises without experimental flag."""
         with pytest.raises(ExperimentalFeatureError, match="experimental"):
             build_fixed_airflow_activate()
 
-    # --- Packet structure tests (with experimental flag) ---
-
-    def test_build_holiday_days_query_7_days(self):
-        """Test Holiday days query for 7 days."""
-        packet = build_holiday_days_query(7, _experimental=True)
-        assert packet == bytes.fromhex("a5b61006051a000000070e")
-        assert verify_checksum(packet)
-
-    def test_build_holiday_days_query_14_days(self):
-        """Test Holiday days query for 14 days."""
-        packet = build_holiday_days_query(14, _experimental=True)
-        assert packet == bytes.fromhex("a5b61006051a0000000e07")
-        assert verify_checksum(packet)
-
-    def test_build_holiday_days_query_3_days(self):
-        """Test Holiday days query for 3 days."""
-        packet = build_holiday_days_query(3, _experimental=True)
-        assert packet == bytes.fromhex("a5b61006051a000000030a")
-        assert verify_checksum(packet)
+    def test_fixed_airflow_unsupported(self):
+        """Test that Fixed Air Flow is unsupported even with experimental flag."""
+        with pytest.raises(ExperimentalFeatureError, match="encoding is unknown"):
+            build_fixed_airflow_activate(_experimental=True)
 
     def test_build_holiday_status_query(self):
         """Test Holiday status query packet (no experimental flag needed)."""
         packet = build_holiday_status_query()
         assert packet == bytes.fromhex("a5b61006052c000000003f")
-        assert verify_checksum(packet)
-
-    def test_build_special_mode_command_structure(self):
-        """Test special mode command has correct structure."""
-        packet = _build_special_mode_command(preheat_enabled=True)
-
-        assert packet[:2] == b"\xa5\xb6"  # magic
-        assert packet[2] == 0x1A  # type
-        assert packet[3:6] == bytes([0x06, 0x06, 0x1A])  # header
-        assert packet[6] == 0x02  # preheat enabled
-        assert packet[7] == 0x04  # special mode flag
-        # bytes 8-10 are HH:MM:SS (time-dependent)
-        assert 0 <= packet[8] <= 23  # valid hour
-        assert 0 <= packet[9] <= 59  # valid minute
-        assert 0 <= packet[10] <= 59  # valid second
-        assert verify_checksum(packet)
-
-    def test_build_special_mode_preheat_disabled(self):
-        """Test special mode with preheat disabled."""
-        packet = _build_special_mode_command(preheat_enabled=False)
-        assert packet[6] == 0x00  # preheat disabled
-        assert packet[7] == 0x04  # special mode flag still set
-        assert verify_checksum(packet)
-
-    def test_build_holiday_activate_returns_sequence(self):
-        """Test Holiday activate returns correct packet sequence."""
-        packets = build_holiday_activate(7, preheat_enabled=True, _experimental=True)
-
-        assert len(packets) == 2
-        # First packet is days query
-        assert packets[0] == bytes.fromhex("a5b61006051a000000070e")
-        # Second packet is special mode activation
-        assert packets[1][7] == 0x04  # special mode flag
-        assert verify_checksum(packets[0])
-        assert verify_checksum(packets[1])
-
-    def test_build_night_ventilation_activate(self):
-        """Test Night Ventilation activation."""
-        packet = build_night_ventilation_activate(preheat_enabled=True, _experimental=True)
-        assert packet[7] == 0x04  # special mode flag
-        assert verify_checksum(packet)
-
-    def test_build_fixed_airflow_activate(self):
-        """Test Fixed Air Flow activation."""
-        packet = build_fixed_airflow_activate(preheat_enabled=False, _experimental=True)
-        assert packet[6] == 0x00  # preheat disabled
-        assert packet[7] == 0x04  # special mode flag
         assert verify_checksum(packet)
