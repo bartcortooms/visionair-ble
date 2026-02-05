@@ -109,8 +109,109 @@ def format_sensors(data: "DeviceStatus | SensorData", enabled_only: bool = True)
 
     return "\n".join(lines)
 
-# Magic prefix for all packets
+# =============================================================================
+# Protocol Constants
+# =============================================================================
+
+# Packet framing
 MAGIC = b"\xa5\xb6"
+PACKET_SIZE = 11  # Standard command packet size
+
+
+class PacketType:
+    """Packet types (byte 2 in all packets)."""
+
+    STATUS_RESPONSE = 0x01      # Status notification (182 bytes)
+    SCHEDULE_RESPONSE = 0x02    # Schedule data
+    SENSOR_RESPONSE = 0x03      # Sensor/history data
+    REQUEST = 0x10              # Request command
+    SETTINGS = 0x1A             # Settings command
+    SETTINGS_ACK = 0x23         # Settings acknowledgment
+    SCHEDULE_CONFIG = 0x46      # Schedule configuration
+    SCHEDULE_QUERY = 0x47       # Schedule query
+    HOLIDAY_STATUS = 0x50       # Holiday mode status
+
+
+class RequestParam:
+    """Request parameters (byte 5 in 0x10 request packets)."""
+
+    STATUS = 0x03               # Request status
+    HISTORY = 0x07              # Request sensor history
+    SENSOR_SELECT = 0x18        # Set sensor cycle
+    BOOST = 0x19                # Activate BOOST
+    HOLIDAY_DAYS = 0x1A         # Query holiday days remaining
+    HOLIDAY_STATUS = 0x2C       # Query holiday mode status
+
+
+class SettingsMode:
+    """Settings mode (byte 7 in 0x1a settings packets)."""
+
+    NORMAL = 0x00               # Normal airflow/preheat settings
+    SUMMER_LIMIT = 0x02         # Summer limit temperature
+    SPECIAL_MODE = 0x04         # Holiday/Night Vent/Fixed Air Flow
+    SCHEDULE = 0x05             # Schedule on/off
+
+
+class AirflowLevel:
+    """Airflow mode protocol values.
+
+    These are internal protocol identifiers, NOT actual m³/h values.
+    The actual m³/h is calculated from configured_volume × ACH rate.
+    """
+
+    LOW = 131       # Protocol identifier for LOW mode
+    MEDIUM = 164    # Protocol identifier for MEDIUM mode
+    HIGH = 201      # Protocol identifier for HIGH mode
+
+
+# Backward compatibility aliases
+AIRFLOW_LOW = AirflowLevel.LOW
+AIRFLOW_MEDIUM = AirflowLevel.MEDIUM
+AIRFLOW_HIGH = AirflowLevel.HIGH
+
+
+class StatusOffset:
+    """Field offsets in status response packet (type 0x01, 182 bytes)."""
+
+    TYPE = 2
+    DEVICE_ID = 4               # 4 bytes, little-endian
+    HUMIDITY_RAW = 5            # Humidity * 2 from remote
+    TEMP_REMOTE = 8             # Room temperature (from remote)
+    CONFIGURED_VOLUME = 22      # 2 bytes, little-endian
+    OPERATING_DAYS = 26         # 2 bytes, little-endian
+    FILTER_DAYS = 28            # 2 bytes, little-endian
+    SENSOR_SELECTOR = 34        # Current sensor source (0/1/2)
+    TEMP_PROBE1 = 35            # Outlet temp (may be stale)
+    SUMMER_LIMIT_TEMP = 38
+    TEMP_PROBE2 = 42            # Inlet temp (may be stale)
+    BOOST_ACTIVE = 44
+    AIRFLOW_INDICATOR = 47      # 38=low, 104=medium, 194=high
+    PREHEAT_ENABLED = 49
+    SUMMER_LIMIT_ENABLED = 50
+    PREHEAT_TEMP = 56
+
+
+class SensorOffset:
+    """Field offsets in sensor response packet (type 0x03)."""
+
+    TYPE = 2
+    TEMP_PROBE1 = 6             # Outlet temperature (live)
+    HUMIDITY_PROBE1 = 8         # Outlet humidity
+    TEMP_PROBE2 = 11            # Inlet temperature (live)
+    FILTER_PERCENT = 13         # Filter remaining %
+
+
+class AirflowIndicator:
+    """Airflow indicator values (status byte 47)."""
+
+    LOW = 38      # 0x26
+    MEDIUM = 104  # 0x68
+    HIGH = 194    # 0xC2
+
+
+# =============================================================================
+# BLE Configuration
+# =============================================================================
 
 # BLE GATT UUIDs (Cypress PSoC demo profile, reused by vendor)
 STATUS_CHAR_UUID = "0003caa2-0000-1000-8000-00805f9b0131"  # Notify
@@ -125,27 +226,25 @@ CCCD_HANDLE = 0x000F
 VISIONAIR_MAC_PREFIX = "00:A0:50"
 DEVICE_NAMES = ("visionair", "purevent", "urban", "cube")
 
-# Airflow mode protocol values
-# These are internal protocol identifiers, NOT actual m³/h values.
-# The actual m³/h is calculated from configured_volume × ACH rate.
-AIRFLOW_LOW = 131      # Protocol identifier for LOW mode
-AIRFLOW_MEDIUM = 164   # Protocol identifier for MEDIUM mode
-AIRFLOW_HIGH = 201     # Protocol identifier for HIGH mode
+# =============================================================================
+# Airflow Configuration
+# =============================================================================
 
 # Airflow mode -> (byte1, byte2) for settings packet
 # These byte pairs are universal mode selectors - the device firmware
 # applies the appropriate airflow based on its volume calibration.
+# Hypothesis from PSoC analysis: these may represent PWM duty cycles.
 AIRFLOW_BYTES: dict[int, tuple[int, int]] = {
-    AIRFLOW_LOW: (0x19, 0x0A),     # LOW mode
-    AIRFLOW_MEDIUM: (0x28, 0x15),  # MEDIUM mode
-    AIRFLOW_HIGH: (0x07, 0x30),    # HIGH mode
+    AirflowLevel.LOW: (0x19, 0x0A),     # LOW mode
+    AirflowLevel.MEDIUM: (0x28, 0x15),  # MEDIUM mode
+    AirflowLevel.HIGH: (0x07, 0x30),    # HIGH mode
 }
 
 # Status response byte 47 -> airflow mode protocol value
 AIRFLOW_INDICATOR: dict[int, int] = {
-    38: AIRFLOW_LOW,     # 0x26
-    104: AIRFLOW_MEDIUM, # 0x68
-    194: AIRFLOW_HIGH,   # 0xC2
+    AirflowIndicator.LOW: AirflowLevel.LOW,
+    AirflowIndicator.MEDIUM: AirflowLevel.MEDIUM,
+    AirflowIndicator.HIGH: AirflowLevel.HIGH,
 }
 
 # Sensor selector (status byte 34)
@@ -208,6 +307,9 @@ class DeviceStatus:
     # Sensors - humidity
     humidity_remote: float | None = field(default=None, metadata=sensor(
         "Room humidity", unit="%", device_class="humidity", precision=0
+    ))
+    humidity_probe1: int | None = field(default=None, metadata=sensor(
+        "Outlet humidity", unit="%", device_class="humidity", precision=0
     ))
 
     # Sensors - equipment life
@@ -290,13 +392,52 @@ def verify_checksum(packet: bytes) -> bool:
     return calculated == expected
 
 
+def build_request(param: int, value: int = 0, extended: bool = False) -> bytes:
+    """Build a standard request packet (type 0x10).
+
+    Args:
+        param: Request parameter (from RequestParam class)
+        value: Optional value byte (default 0)
+        extended: If True, use extended format (0x06 at byte 3), else short format (0x00)
+
+    Returns:
+        Complete packet bytes with checksum
+    """
+    if extended:
+        # Extended format: 10 06 05 param 00 00 00 value
+        payload = bytes([
+            PacketType.REQUEST,
+            0x06,
+            0x05,
+            param,
+            0x00,
+            0x00,
+            0x00,
+            value,
+        ])
+    else:
+        # Short format: 10 00 05 param 00 00 00 00
+        payload = bytes([
+            PacketType.REQUEST,
+            0x00,
+            0x05,
+            param,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+        ])
+    checksum = calc_checksum(payload)
+    return MAGIC + payload + bytes([checksum])
+
+
 def build_status_request() -> bytes:
     """Build a status request packet.
 
     Returns:
         Complete packet bytes: a5b6100005030000000016
     """
-    return bytes.fromhex("a5b6100005030000000016")
+    return build_request(RequestParam.STATUS)
 
 
 def build_sensor_request() -> bytes:
@@ -305,7 +446,7 @@ def build_sensor_request() -> bytes:
     Returns:
         Complete packet bytes: a5b6100605070000000014
     """
-    return bytes.fromhex("a5b6100605070000000014")
+    return build_request(RequestParam.HISTORY, extended=True)
 
 
 def build_sensor_select_request(sensor: int) -> bytes:
@@ -331,9 +472,7 @@ def build_sensor_select_request(sensor: int) -> bytes:
     if sensor not in (0, 1, 2):
         raise ValueError("sensor must be 0 (Probe2), 1 (Probe1), or 2 (Remote)")
 
-    payload = bytes([0x10, 0x06, 0x05, 0x18, 0x00, 0x00, 0x00, sensor])
-    checksum = calc_checksum(payload)
-    return MAGIC + payload + bytes([checksum])
+    return build_request(RequestParam.SENSOR_SELECT, value=sensor, extended=True)
 
 
 def build_boost_command(enable: bool) -> bytes:
@@ -345,10 +484,7 @@ def build_boost_command(enable: bool) -> bytes:
     Returns:
         Complete packet bytes
     """
-    if enable:
-        return bytes.fromhex("a5b610060519000000010b")
-    else:
-        return bytes.fromhex("a5b610060519000000000a")
+    return build_request(RequestParam.BOOST, value=1 if enable else 0, extended=True)
 
 
 # =============================================================================
@@ -406,9 +542,7 @@ def build_holiday_days_query(days: int, *, _experimental: bool = False) -> bytes
         ExperimentalFeatureError: If _experimental is not True
     """
     _require_experimental(_experimental, "Holiday mode")
-    payload = bytes([0x10, 0x06, 0x05, 0x1A, 0x00, 0x00, 0x00, days])
-    checksum = calc_checksum(payload)
-    return MAGIC + payload + bytes([checksum])
+    return build_request(RequestParam.HOLIDAY_DAYS, value=days, extended=True)
 
 
 def build_holiday_status_query() -> bytes:
@@ -420,7 +554,7 @@ def build_holiday_status_query() -> bytes:
     Returns:
         Complete packet bytes
     """
-    return bytes.fromhex("a5b61006052c000000003f")
+    return build_request(RequestParam.HOLIDAY_STATUS, extended=True)
 
 
 def _build_special_mode_command(preheat_enabled: bool = True) -> bytes:
@@ -438,12 +572,12 @@ def _build_special_mode_command(preheat_enabled: bool = True) -> bytes:
     """
     now = datetime.now()
     payload = bytes([
-        0x1A,
+        PacketType.SETTINGS,
         0x06,
         0x06,
         0x1A,
         0x02 if preheat_enabled else 0x00,  # byte 6: preheat
-        0x04,                                # byte 7: special mode flag
+        SettingsMode.SPECIAL_MODE,           # byte 7: special mode flag
         now.hour,                            # byte 8: hour
         now.minute,                          # byte 9: minute
         now.second,                          # byte 10: second
@@ -539,21 +673,25 @@ def build_settings_packet(
         preheat_enabled: Enable winter preheat
         summer_limit_enabled: Enable summer limit
         preheat_temp: Target temperature in °C (typically 14-22)
-        airflow: Airflow in m³/h (131, 164, or 201)
+        airflow: Airflow mode (AirflowLevel.LOW/MEDIUM/HIGH or 131/164/201)
 
     Returns:
         Complete packet bytes ready to send
 
     Raises:
-        ValueError: If airflow is not 131, 164, or 201
+        ValueError: If airflow is not a valid AirflowLevel
     """
     if airflow not in AIRFLOW_BYTES:
-        raise ValueError(f"Airflow must be {AIRFLOW_LOW}, {AIRFLOW_MEDIUM}, or {AIRFLOW_HIGH}")
+        raise ValueError(
+            f"Airflow must be AirflowLevel.LOW ({AirflowLevel.LOW}), "
+            f"AirflowLevel.MEDIUM ({AirflowLevel.MEDIUM}), or "
+            f"AirflowLevel.HIGH ({AirflowLevel.HIGH})"
+        )
 
     af_b1, af_b2 = AIRFLOW_BYTES[airflow]
 
     payload = bytes([
-        0x1A,
+        PacketType.SETTINGS,
         0x06,
         0x06,
         0x1A,
@@ -577,11 +715,11 @@ def parse_status(data: bytes) -> DeviceStatus | None:
     Returns:
         DeviceStatus object or None if packet is invalid
     """
-    if len(data) < 61 or data[:2] != MAGIC or data[2] != 0x01:
+    if len(data) < 61 or data[:2] != MAGIC or data[StatusOffset.TYPE] != PacketType.STATUS_RESPONSE:
         return None
 
-    airflow_indicator = data[47]
-    sensor_selector = data[34]
+    airflow_indicator = data[StatusOffset.AIRFLOW_INDICATOR]
+    sensor_selector = data[StatusOffset.SENSOR_SELECTOR]
     sensor_name = SENSOR_NAMES.get(sensor_selector, f"Unknown ({sensor_selector})")
 
     # Configured volume from bytes 22-23 (little-endian uint16)
@@ -589,8 +727,10 @@ def parse_status(data: bytes) -> DeviceStatus | None:
     airflow_low = None
     airflow_medium = None
     airflow_high = None
-    if len(data) >= 24:
-        configured_volume = int.from_bytes(data[22:24], "little")
+    if len(data) >= StatusOffset.CONFIGURED_VOLUME + 2:
+        configured_volume = int.from_bytes(
+            data[StatusOffset.CONFIGURED_VOLUME:StatusOffset.CONFIGURED_VOLUME + 2], "little"
+        )
         if configured_volume > 0:
             # Calculate actual airflow values based on volume and ACH rates
             airflow_low = round(configured_volume * 0.36)
@@ -600,29 +740,33 @@ def parse_status(data: bytes) -> DeviceStatus | None:
     # Determine current airflow mode and value from indicator
     airflow_mode = "unknown"
     airflow = 0
-    if airflow_indicator == 38:  # 0x26 = LOW
+    if airflow_indicator == AirflowIndicator.LOW:
         airflow_mode = "low"
-        airflow = airflow_low or AIRFLOW_LOW
-    elif airflow_indicator == 104:  # 0x68 = MEDIUM
+        airflow = airflow_low or AirflowLevel.LOW
+    elif airflow_indicator == AirflowIndicator.MEDIUM:
         airflow_mode = "medium"
-        airflow = airflow_medium or AIRFLOW_MEDIUM
-    elif airflow_indicator == 194:  # 0xC2 = HIGH
+        airflow = airflow_medium or AirflowLevel.MEDIUM
+    elif airflow_indicator == AirflowIndicator.HIGH:
         airflow_mode = "high"
-        airflow = airflow_high or AIRFLOW_HIGH
+        airflow = airflow_high or AirflowLevel.HIGH
 
     # Humidity from byte 5 (divide by 2 for percentage)
-    humidity_raw = data[5] if len(data) > 5 else 0
+    humidity_raw = data[StatusOffset.HUMIDITY_RAW] if len(data) > StatusOffset.HUMIDITY_RAW else 0
     humidity = humidity_raw / 2 if humidity_raw else None
 
     # Equipment life fields (little-endian uint16)
     filter_days = None
     operating_days = None
-    if len(data) >= 30:
-        filter_days = int.from_bytes(data[28:30], "little")
-        operating_days = int.from_bytes(data[26:28], "little")
+    if len(data) >= StatusOffset.FILTER_DAYS + 2:
+        filter_days = int.from_bytes(
+            data[StatusOffset.FILTER_DAYS:StatusOffset.FILTER_DAYS + 2], "little"
+        )
+        operating_days = int.from_bytes(
+            data[StatusOffset.OPERATING_DAYS:StatusOffset.OPERATING_DAYS + 2], "little"
+        )
 
     return DeviceStatus(
-        device_id=int.from_bytes(data[4:8], "little"),
+        device_id=int.from_bytes(data[StatusOffset.DEVICE_ID:StatusOffset.DEVICE_ID + 4], "little"),
         configured_volume=configured_volume,
         airflow=airflow,
         airflow_low=airflow_low,
@@ -630,16 +774,16 @@ def parse_status(data: bytes) -> DeviceStatus | None:
         airflow_high=airflow_high,
         airflow_indicator=airflow_indicator,
         airflow_mode=airflow_mode,
-        preheat_enabled=data[49] != 0x00,
-        summer_limit_enabled=data[50] != 0x00,
-        summer_limit_temp=data[38] if len(data) > 38 else None,
-        preheat_temp=data[56],
-        boost_active=data[44] == 0x01 if len(data) > 44 else False,
+        preheat_enabled=data[StatusOffset.PREHEAT_ENABLED] != 0x00,
+        summer_limit_enabled=data[StatusOffset.SUMMER_LIMIT_ENABLED] != 0x00,
+        summer_limit_temp=data[StatusOffset.SUMMER_LIMIT_TEMP] if len(data) > StatusOffset.SUMMER_LIMIT_TEMP else None,
+        preheat_temp=data[StatusOffset.PREHEAT_TEMP],
+        boost_active=data[StatusOffset.BOOST_ACTIVE] == 0x01 if len(data) > StatusOffset.BOOST_ACTIVE else False,
         sensor_selector=sensor_selector,
         sensor_name=sensor_name,
-        temp_remote=data[8] if len(data) > 8 else None,
-        temp_probe1=data[35] if len(data) > 35 else None,
-        temp_probe2=data[42] if len(data) > 42 else None,
+        temp_remote=data[StatusOffset.TEMP_REMOTE] if len(data) > StatusOffset.TEMP_REMOTE else None,
+        temp_probe1=data[StatusOffset.TEMP_PROBE1] if len(data) > StatusOffset.TEMP_PROBE1 else None,
+        temp_probe2=data[StatusOffset.TEMP_PROBE2] if len(data) > StatusOffset.TEMP_PROBE2 else None,
         humidity_remote=humidity,
         filter_days=filter_days,
         operating_days=operating_days,
@@ -655,14 +799,14 @@ def parse_sensors(data: bytes) -> SensorData | None:
     Returns:
         SensorData object or None if packet is invalid
     """
-    if len(data) < 14 or data[:2] != MAGIC or data[2] != 0x03:
+    if len(data) < 14 or data[:2] != MAGIC or data[SensorOffset.TYPE] != PacketType.SENSOR_RESPONSE:
         return None
 
     return SensorData(
-        temp_probe1=data[6] if len(data) > 6 else None,
-        temp_probe2=data[11] if len(data) > 11 else None,
-        humidity_probe1=data[8] if len(data) > 8 else None,
-        filter_percent=data[13] if len(data) > 13 else None,
+        temp_probe1=data[SensorOffset.TEMP_PROBE1] if len(data) > SensorOffset.TEMP_PROBE1 else None,
+        temp_probe2=data[SensorOffset.TEMP_PROBE2] if len(data) > SensorOffset.TEMP_PROBE2 else None,
+        humidity_probe1=data[SensorOffset.HUMIDITY_PROBE1] if len(data) > SensorOffset.HUMIDITY_PROBE1 else None,
+        filter_percent=data[SensorOffset.FILTER_PERCENT] if len(data) > SensorOffset.FILTER_PERCENT else None,
     )
 
 

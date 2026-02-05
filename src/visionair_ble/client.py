@@ -24,7 +24,9 @@ from .protocol import (
     COMMAND_CHAR_UUID,
     MAGIC,
     STATUS_CHAR_UUID,
+    AirflowLevel,
     DeviceStatus,
+    PacketType,
     SensorData,
     build_boost_command,
     build_sensor_request,
@@ -110,7 +112,7 @@ class VisionAirClient:
         def handler(*args: Any) -> None:
             nonlocal status_data
             data = args[-1]  # data is always last arg
-            if bytes(data[:2]) == MAGIC and data[2] == 0x01:
+            if bytes(data[:2]) == MAGIC and data[2] == PacketType.STATUS_RESPONSE:
                 status_data = bytes(data)
                 event.set()
 
@@ -153,7 +155,7 @@ class VisionAirClient:
         def handler(*args: Any) -> None:
             nonlocal sensor_data
             data = args[-1]
-            if bytes(data[:2]) == MAGIC and data[2] == 0x03:
+            if bytes(data[:2]) == MAGIC and data[2] == PacketType.SENSOR_RESPONSE:
                 sensor_data = bytes(data)
                 event.set()
 
@@ -176,48 +178,47 @@ class VisionAirClient:
         return sensors
 
     async def get_fresh_status(self, timeout: float = 10.0) -> DeviceStatus:
-        """Get device status with fresh temperature readings from all sensors.
+        """Get device status with fresh sensor readings.
 
         This method explicitly requests readings from each sensor (Probe2,
-        Probe1, Remote) to collect fresh temperature values. The regular
-        get_status() method may return stale cached temperature values.
+        Probe1, Remote) to collect fresh temperature values, and also fetches
+        Probe 1 humidity from the sensor packet. The regular get_status()
+        method may return stale cached values.
 
-        Note on humidity:
-        - Remote humidity comes from the status packet (accurate)
-        - Probe 1 humidity requires a separate get_sensors() call
-        - Probe 2 has no humidity sensor
+        Humidity sources:
+        - Remote humidity: STATUS packet byte 5
+        - Probe 1 humidity: SENSOR packet byte 8
+        - Probe 2: No humidity sensor
 
         Args:
             timeout: How long to wait for each response in seconds
 
         Returns:
-            DeviceStatus with fresh temperature readings
+            DeviceStatus with fresh temperature and humidity readings
 
         Raises:
             TimeoutError: If no response within timeout
         """
         self._find_characteristics()
 
-        # Collect fresh temperature readings for each sensor
-        # Note: Humidity is NOT available per-sensor from STATUS packets.
-        # Remote humidity comes from byte 5 (via parse_status).
-        # Probe 1 humidity comes from HISTORY packets (via get_sensors).
         fresh_temps: dict[int, int] = {}  # selector -> temp
         last_status_data: bytes | None = None
+        probe1_humidity: int | None = None
 
         event = asyncio.Event()
         current_data: bytes | None = None
+        expected_type: int = PacketType.STATUS_RESPONSE
 
         def handler(*args: Any) -> None:
             nonlocal current_data
             data = args[-1]
-            if bytes(data[:2]) == MAGIC and data[2] == 0x01:
+            if bytes(data[:2]) == MAGIC and data[2] == expected_type:
                 current_data = bytes(data)
                 event.set()
 
         await self._client.start_notify(self._status_char, handler)
         try:
-            # Request fresh readings from each sensor explicitly
+            # Request fresh temperature readings from each sensor
             # Sensor 0 = Probe2 (inlet), 1 = Probe1 (outlet), 2 = Remote
             for sensor in (0, 1, 2):
                 event.clear()
@@ -232,6 +233,18 @@ class VisionAirClient:
                     # Byte 32 contains fresh temperature for selected sensor
                     fresh_temps[selector] = current_data[32]
                     last_status_data = current_data
+
+            # Request sensor packet for Probe 1 humidity
+            event.clear()
+            current_data = None
+            expected_type = PacketType.SENSOR_RESPONSE
+            await self._client.write_gatt_char(
+                self._command_char, build_sensor_request(), response=True
+            )
+            await asyncio.wait_for(event.wait(), timeout=timeout)
+
+            if current_data and len(current_data) >= 9:
+                probe1_humidity = current_data[8]
         finally:
             await self._client.stop_notify(self._status_char)
 
@@ -244,7 +257,6 @@ class VisionAirClient:
             raise ValueError("Invalid status response")
 
         # Override with fresh sensor readings
-        # Selector 0 = Probe2, 1 = Probe1, 2 = Remote
         from dataclasses import replace
 
         if 0 in fresh_temps:
@@ -253,8 +265,8 @@ class VisionAirClient:
             status = replace(status, temp_probe1=fresh_temps[1])
         if 2 in fresh_temps:
             status = replace(status, temp_remote=fresh_temps[2])
-        # Note: humidity_remote comes from parse_status (byte 5).
-        # For fresh Probe 1 humidity, call get_sensors() separately.
+        if probe1_humidity is not None:
+            status = replace(status, humidity_probe1=probe1_humidity)
 
         self._last_status = status
         return status
@@ -364,7 +376,7 @@ class VisionAirClient:
 
         def handler(*args: Any) -> None:
             data = args[-1]
-            if bytes(data[:2]) == MAGIC and data[2] == 0x23:  # ACK
+            if bytes(data[:2]) == MAGIC and data[2] == PacketType.SETTINGS_ACK:
                 ack_received.set()
 
         await self._client.start_notify(self._status_char, handler)
@@ -419,7 +431,7 @@ class VisionAirClient:
 
         def handler(*args: Any) -> None:
             data = args[-1]
-            if bytes(data[:2]) == MAGIC and data[2] == 0x23:
+            if bytes(data[:2]) == MAGIC and data[2] == PacketType.SETTINGS_ACK:
                 ack_received.set()
 
         await self._client.start_notify(self._status_char, handler)
