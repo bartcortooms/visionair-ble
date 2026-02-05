@@ -155,10 +155,13 @@ Structure: `a5b6 1a 06 06 1a <preheat> <mode> <temp> <af1> <af2> <checksum>`
 | HIGH | 0x07 | 0x30 | `a5b61a06061a020210073027` |
 
 > **Note:** These byte values are internal device references, not m³/h values.
-> The actual meaning (fan PWM, calibration indices, etc.) is unknown — we only
-> know these specific byte pairs correspond to LOW/MEDIUM/HIGH modes through
-> observation. See [Volume-Based Calculations](#62-volume-based-calculations)
-> for actual airflow.
+> See [Volume-Based Calculations](#62-volume-based-calculations) for actual airflow.
+>
+> **Hypothesis (medium confidence):** Based on Cypress PSoC patterns, these may be
+> **PWM duty cycle pairs** for the fan motor. PSoC demo code uses similar two-value
+> patterns for pulse-width modulation (e.g., `PRS_WritePulse0/1`). The lack of
+> obvious mathematical relationship between values supports this — they're likely
+> calibrated motor control values rather than computed from airflow.
 
 ### 4.3 Special Modes
 
@@ -166,6 +169,20 @@ Structure: `a5b6 1a 06 06 1a <preheat> <mode> <temp> <af1> <af2> <checksum>`
 > See [Open Questions](#open-questions) for details. Use with caution.
 
 All special modes use the Settings Command with byte 7 = `0x04`. Bytes 8-9-10 encode an HH:MM:SS timestamp.
+
+**Why timestamps? (high confidence):** The PSoC BLE chip lacks a battery-backed RTC — it uses a
+Watchdog Timer for timekeeping which resets on power loss. The timestamp likely serves to:
+1. Sync the device's internal clock with the app
+2. Provide a reference point for calculating mode expiration
+
+**Mode differentiation hypothesis (medium confidence):** Holiday, Night Ventilation, and Fixed Air
+Flow all send identical `0x04` packets. Based on PSoC's event-driven state machine pattern, the
+device likely uses **preceding query packets** to select which mode to activate:
+- Query `0x1a` (days) → selects Holiday mode
+- Query `0x1b` → may select Fixed Air Flow mode (one capture observed)
+- Unknown query → may select Night Ventilation mode
+
+The `0x04` command then activates whatever mode was most recently selected.
 
 #### Holiday Mode
 
@@ -313,6 +330,10 @@ Responses arrive as notifications on characteristic handle 0x000e. Subscribe by 
 | 104 (0x68) | MEDIUM | × 0.45 |
 | 194 (0xC2) | HIGH | × 0.55 |
 
+> **Note:** Like the settings bytes, these values have no obvious mathematical relationship.
+> They may be internal state identifiers or PWM-related values. Use the ACH factors with the
+> configured volume to calculate actual m³/h.
+
 #### Diagnostic Status Bitfield (byte 54)
 
 | Bit | Value | Component |
@@ -431,8 +452,10 @@ See [implementation-status.md](implementation-status.md) for feature implementat
 
 **Special Modes:**
 - How does the device distinguish Holiday vs Night Vent vs Fixed Air Flow modes?
+  - *Partial answer:* Likely via preceding query packets (state machine). See [Special Modes](#43-special-modes).
 - How to explicitly deactivate special modes (toggle OFF behavior)?
 - Does Holiday mode require the days query every time, or is it stored?
+  - *Hypothesis:* Probably needs to be sent each time — PSoC examples don't show persistent state storage for such values.
 
 **Schedule:**
 - Schedule Mode 3 (HIGH) byte value — not captured
@@ -451,3 +474,5 @@ See [implementation-status.md](implementation-status.md) for feature implementat
 ## Appendix B: References
 
 - [Infineon AN91162 - Creating a BLE Custom Profile](https://www.infineon.com/dgdl/Infineon-AN91162_Creating_a_BLE_Custom_Profile-ApplicationNotes-v05_00-EN.pdf)
+- [Implementation Speculation](implementation-speculation.md) — Analysis of likely firmware implementation based on Cypress PSoC-4-BLE demo code patterns
+- [Infineon PSoC-4-BLE GitHub](https://github.com/Infineon/PSoC-4-BLE) — Demo projects that VisionAir firmware appears to be based on
