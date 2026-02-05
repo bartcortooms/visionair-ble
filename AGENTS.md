@@ -12,9 +12,24 @@ VisionAir BLE is a Python library for communicating with Ventilairsec VisionAir 
 
 ## Running Tests
 
+Use `uv` for running tests, scripts, and Python commands:
+
 ```bash
-pytest
+# Unit tests
+uv run pytest
+
+# E2E tests (requires device to be powered on and in range)
+uv run pytest -m e2e -v
 ```
+
+### E2E Tests
+
+E2E tests require a real VisionAir device. Configuration is in `.env`:
+- `PROXY_HOST` - ESPHome BLE proxy IP address
+- `PROXY_KEY` - ESPHome API encryption key
+- `DEVICE_ADDRESS` - VisionAir device MAC address
+
+The tests are read-only and do not modify device settings.
 
 ## Code Style
 
