@@ -105,7 +105,7 @@ Requests fresh data for a specific sensor. Byte 7 selects which sensor:
 | 0x02 | Remote Control | `a5b6100605180000000209` |
 
 The response's sensor selector (byte 34) matches the requested sensor, and
-bytes 32/60 contain fresh temperature/humidity for that sensor.
+byte 32 contains the fresh temperature for that sensor.
 
 To get fresh readings for all sensors, send all three requests in sequence.
 
@@ -312,8 +312,8 @@ Responses arrive as notifications on characteristic handle 0x000e. Subscribe by 
 |--------|------|-------------|---------|
 | 0-1 | 2 | Magic | `a5b6` |
 | 2 | 1 | Type | `0x01` |
-| 4-7 | 4 | Device ID (LE) | `37682540` |
-| 5 | 1 | Remote humidity raw (÷2 = %) | 104 → 52% |
+| 4 | 1 | Remote humidity (%) | 55 |
+| 5-7 | 3 | Unknown (constant per device) | `68 25 40` |
 | 8 | 1 | Remote temperature (°C) | 18 |
 | 22-23 | 2 | Configured volume (m³) (LE u16) | 363 |
 | 26-27 | 2 | Operating days (LE u16) | 634 |
@@ -449,8 +449,9 @@ See [implementation-status.md](implementation-status.md) for feature implementat
 
 | Location | Observed Values | Hypothesis |
 |----------|-----------------|------------|
+| Bytes 5-7 | 0x68 0x25 0x40 | Constant per device, possibly device ID |
 | Byte 57 | 11, 25, 28 | Varies with sensor |
-| Byte 60 | 100-210 | Context-dependent humidity |
+| Byte 60 | 100-210 | Unknown |
 | Bytes 60-180 | Mostly zeros | May contain version info |
 
 ### App Fields Not Located in BLE

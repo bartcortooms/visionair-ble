@@ -63,7 +63,8 @@ CYBLE_CYPACKED typedef struct
 {
     uint8_t type;           // 0x01 for status
     uint8_t reserved;
-    uint8_t device_id[4];   // little-endian
+    uint8_t humidity;       // byte 4: remote humidity %
+    uint8_t unknown[3];     // bytes 5-7: constant per device
     // ... 182 bytes total
 }CYBLE_CYPACKED_ATTR VISIONAIR_STATUS_T;
 

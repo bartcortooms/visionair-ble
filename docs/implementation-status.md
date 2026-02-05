@@ -7,6 +7,7 @@ This document tracks which protocol features from [protocol.md](protocol.md) are
 | Feature | Documented | Implemented | Function |
 |---------|------------|-------------|----------|
 | Status Request (0x10, param 0x03) | Yes | Yes | `build_status_request()` |
+| Full Data Request (0x10, param 0x06) | Yes | Yes | `build_full_data_request()` |
 | Sensor Request (0x10, param 0x07) | Yes | Yes | `build_sensor_request()` |
 | Sensor Select Request (0x10, param 0x18) | Yes | Yes | `build_sensor_select_request(sensor)` — verified 2026-02-05 |
 | BOOST ON/OFF (0x10, param 0x19) | Yes | Yes | `build_boost_command()` |
