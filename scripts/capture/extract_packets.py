@@ -211,8 +211,8 @@ def decode_status_packet(hex_data: str) -> dict:
         'device_id': struct.unpack('<I', data[4:8])[0],
         # Known sensor fields
         'remote_temp': data[8],           # Remote Control temperature
-        'remote_humidity_raw': data[5],   # Remote humidity (divide by 2)
-        'remote_humidity': data[5] / 2,
+        'remote_humidity_raw': data[4],   # Remote humidity (direct %)
+        'remote_humidity': data[4],
         'probe1_temp': data[35],          # Probe 1 temperature
         'probe2_temp': data[42],          # Probe 2 temperature
         'sensor_selector': data[34],      # 0=Probe2, 1=Probe1, 2=Remote
@@ -303,7 +303,7 @@ def print_summary(packets: dict, output_format: str = 'text'):
         for i, pkt in enumerate(status_pkts[:5]):  # Show first 5
             decoded = decode_status_packet(pkt['hex'])
             print(f"\nStatus #{i+1}:")
-            print(f"  Remote: {decoded['remote_temp']}°C, {decoded['remote_humidity']:.1f}% (raw={decoded['remote_humidity_raw']})")
+            print(f"  Remote: {decoded['remote_temp']}°C, {decoded['remote_humidity']}%")
             print(f"  Probe1: {decoded['probe1_temp']}°C")
             print(f"  Probe2: {decoded['probe2_temp']}°C")
             print(f"  Sensor selector: {decoded['sensor_selector']} ({['Probe2','Probe1','Remote'][decoded['sensor_selector']] if decoded['sensor_selector'] < 3 else '?'})")

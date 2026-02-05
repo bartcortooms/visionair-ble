@@ -191,7 +191,7 @@ class VisionAirClient:
         method may return stale cached values.
 
         Humidity sources:
-        - Remote humidity: STATUS packet byte 5
+        - Remote humidity: STATUS packet byte 4
         - Probe 1 humidity: SENSOR packet byte 8
         - Probe 2: No humidity sensor
 
