@@ -1,0 +1,89 @@
+[screens.home]
+requires_desc = ["LIVING ROOM", "FILTER"]
+
+[screens.menu]
+requires_desc = ["Configuration", "Maintenance", "Sensor management"]
+
+[screens.configuration]
+requires_desc = ["CONFIGURATION"]
+
+[screens.maintenance]
+requires_desc = ["MAINTENANCE"]
+
+[screens.available_info]
+requires_desc = ["AVAILABLE INFO"]
+
+[screens.equipment_life]
+requires_desc = ["EQUIPMENT LIFE"]
+
+[screens.measurements]
+requires_desc = ["INSTANTANEOUS MEASUREMENTS"]
+
+[screens.diagnostic]
+requires_desc = ["DIAGNOSTIC"]
+
+[screens.special_modes]
+requires_desc = ["SPECIAL MODES"]
+
+[screens.time_slots]
+requires_desc = ["TIME SLOT CONFIGURATION"]
+
+[screens.sensor_management]
+requires_desc = ["SENSOR MANAGEMENT"]
+
+[screens.simplified]
+requires_desc = ["SIMPLIFIED CONFIGURATION"]
+
+[selectors.menu_configuration]
+labels = ["Configuration"]
+
+[selectors.menu_maintenance]
+labels = ["Maintenance"]
+
+[selectors.menu_sensors]
+labels = ["Sensor management"]
+
+[selectors.maintenance_available_info]
+labels = ["Available info"]
+
+[selectors.available_info_equipment_life]
+labels = ["Equipment life"]
+
+[selectors.available_info_measurements]
+labels = ["Instantaneous measurements", "Measurements"]
+
+[selectors.available_info_diagnostic]
+labels = ["Diagnostic"]
+
+[selectors.configuration_special_modes]
+labels = ["Special modes"]
+
+[selectors.configuration_time_slots]
+labels = ["Time slot configuration"]
+
+[selectors.configuration_simplified]
+labels = ["Simplified configuration", "Simplified"]
+
+[selectors.sensor_probe1]
+labels = ["Probe N°1", "Probe 1", "Probe1", "Outlet"]
+
+[selectors.sensor_probe2]
+labels = ["Probe N°2", "Probe 2", "Probe2", "Inlet"]
+
+[selectors.sensor_remote]
+labels = ["Remote control", "Remote"]
+
+[selectors.connect_vmci]
+labels = ["VMCI"]
+
+[selectors.connect_pair]
+labels = ["PAIR", "Pair"]
+
+[selectors.dialog_firmware_prompt]
+labels = ["embedded software", "Update?"]
+
+[selectors.dialog_firmware_close]
+labels = ["Close"]
+
+[selectors.dialog_firmware_validate]
+labels = ["Validate"]

@@ -11,15 +11,15 @@ Control the Ventilairsec VMI+ app via ADB to capture and analyze BLE protocol tr
 
 ```bash
 # 1. Enable BT snoop logging (one-time setup)
-./scripts/capture/app_control.sh btsnoop-enable
+./scripts/capture/vmictl.py btsnoop-enable
 
 # 2. Connect to device
-./scripts/capture/app_control.sh connect
+./scripts/capture/vmictl.py connect
 
 # 3. Start capture session
-SESSION=$(./scripts/capture/app_control.sh session-start my_session)
+SESSION=$(./scripts/capture/vmictl.py session-start my_session)
 # Navigate, take checkpoints, record values, then end session
-./scripts/capture/app_control.sh session-end "$SESSION"
+./scripts/capture/vmictl.py session-end "$SESSION"
 ```
 
 ## Environment Setup
@@ -30,7 +30,6 @@ Copy `.env.example` to `.env` and configure:
 |----------|-------------|---------|
 | `VMI_MAC` | Device MAC address | `00:A0:50:XX:XX:XX` |
 | `VMI_ADB_TARGET` | ADB device (for WiFi) | `192.168.1.100:5555` |
-| `VMI_RESOLUTION` | Force screen resolution | `1080x2340` |
 
 ## ADB Connection
 
@@ -43,7 +42,7 @@ adb tcpip 5555
 adb connect <phone-ip>:5555
 
 # Specify target for multiple devices
-VMI_ADB_TARGET=192.168.1.100:5555 ./scripts/capture/app_control.sh connect
+VMI_ADB_TARGET=192.168.1.100:5555 ./scripts/capture/vmictl.py connect
 ```
 
 ## Bluetooth Snoop Logging
@@ -52,7 +51,7 @@ VMI_ADB_TARGET=192.168.1.100:5555 ./scripts/capture/app_control.sh connect
 
 ```bash
 # Automated setup (opens Developer Options, selects correct mode)
-./scripts/capture/app_control.sh btsnoop-enable
+./scripts/capture/vmictl.py btsnoop-enable
 
 # Or manually:
 # 1. Settings → Developer Options
@@ -116,7 +115,6 @@ VMI_ADB_TARGET=192.168.1.100:5555 ./scripts/capture/app_control.sh connect
 |---------|-------------|
 | `holiday-toggle` | Toggle Holiday mode ON/OFF |
 | `holiday-days <n>` | Set Holiday duration to n days |
-| `holiday-test [n]` | Full capture test: reset BT, connect, toggle holiday |
 
 ### Utility
 | Command | Description |
@@ -136,7 +134,7 @@ VMI_ADB_TARGET=192.168.1.100:5555 ./scripts/capture/app_control.sh connect
 | `session-start <name>` | Start capture session, outputs directory path |
 | `session-checkpoint <dir>` | Take timestamped screenshot, outputs image path |
 | `session-end <dir>` | End session, pull btsnoop logs |
-| `collect-sensors` | Collect all sensor readings (if 15+ min since last) |
+| `collect-sensors [--force]` | Build timestamped UI+packet evidence session for sensor analysis |
 | `should-collect` | Check if sensor collection is due |
 
 ## Capture Session Workflow
@@ -145,18 +143,18 @@ Non-interactive commands for CLI tools and coding agents:
 
 ```bash
 # 1. Start session (outputs directory path)
-SESSION=$(./scripts/capture/app_control.sh session-start humidity_test)
+SESSION=$(./scripts/capture/vmictl.py session-start humidity_test)
 # Example output: /tmp/vmi_btlogs/humidity_test_20260205_153000
 
 # 2. Navigate to screen, take checkpoint (outputs screenshot path)
-SCREENSHOT=$(./scripts/capture/app_control.sh session-checkpoint "$SESSION")
+SCREENSHOT=$(./scripts/capture/vmictl.py session-checkpoint "$SESSION")
 # Example output: /tmp/vmi_btlogs/.../checkpoint_1_153045.png
 
 # 3. Read the screenshot to see values, then append to checkpoints.txt
 # (Agent reads image, then writes observed values)
 
 # 4. End session and pull btsnoop logs
-./scripts/capture/app_control.sh session-end "$SESSION"
+./scripts/capture/vmictl.py session-end "$SESSION"
 ```
 
 ### Recording Values
@@ -224,13 +222,13 @@ HOME (fan control buttons)
 **Always record app-displayed values WITH timestamps** for packet correlation.
 
 ### For Protocol Discovery
-1. Start session: `SESSION=$(./scripts/capture/app_control.sh session-start test_name)`
+1. Start session: `SESSION=$(./scripts/capture/vmictl.py session-start test_name)`
 2. Navigate to relevant screen
-3. Take checkpoint: `IMG=$(./scripts/capture/app_control.sh session-checkpoint "$SESSION")`
+3. Take checkpoint: `IMG=$(./scripts/capture/vmictl.py session-checkpoint "$SESSION")`
 4. Read screenshot, append values to `$SESSION/checkpoints.txt`
 5. Perform action (e.g., change sensor)
 6. Take another checkpoint, record values
-7. End session: `./scripts/capture/app_control.sh session-end "$SESSION"`
+7. End session: `./scripts/capture/vmictl.py session-end "$SESSION"`
 8. Compare packet bytes between checkpoints
 
 ### For Targeted Tests
@@ -270,7 +268,7 @@ When helping with reverse engineering:
 **At the start of any VMI debugging session**, run the sensor collection command:
 
 ```bash
-./scripts/capture/app_control.sh collect-sensors
+./scripts/capture/vmictl.py collect-sensors
 ```
 
 This command:
@@ -298,24 +296,24 @@ Data is stored persistently in `data/captures/` (gitignored, survives reboots).
 **To verify a byte offset:**
 ```bash
 # Start session
-SESSION=$(./scripts/capture/app_control.sh session-start byte_verify)
+SESSION=$(./scripts/capture/vmictl.py session-start byte_verify)
 
 # Navigate to screen showing the value
-./scripts/capture/app_control.sh measurements-full
+./scripts/capture/vmictl.py measurements-full
 
 # Take checkpoint, read screenshot, record values
-IMG=$(./scripts/capture/app_control.sh session-checkpoint "$SESSION")
+IMG=$(./scripts/capture/vmictl.py session-checkpoint "$SESSION")
 # Read $IMG to see displayed values, append to $SESSION/checkpoints.txt
 
 # Change something that should affect the value
-./scripts/capture/app_control.sh sensor-probe1
+./scripts/capture/vmictl.py sensor-probe1
 
 # Take another checkpoint
-IMG=$(./scripts/capture/app_control.sh session-checkpoint "$SESSION")
+IMG=$(./scripts/capture/vmictl.py session-checkpoint "$SESSION")
 # Read $IMG, append new values to checkpoints.txt
 
 # End session and analyze
-./scripts/capture/app_control.sh session-end "$SESSION"
+./scripts/capture/vmictl.py session-end "$SESSION"
 python scripts/capture/extract_packets.py "$SESSION/btsnoop.log" --checkpoints "$SESSION/checkpoints.txt"
 ```
 

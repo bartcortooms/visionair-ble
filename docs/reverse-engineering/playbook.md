@@ -27,7 +27,7 @@ cp .env.example .env
 Run the following command to enable full BT snoop logging:
 
 ```bash
-./scripts/capture/app_control.sh btsnoop-enable
+./scripts/capture/vmictl.py btsnoop-enable
 ```
 
 This will:
@@ -56,12 +56,12 @@ Use the non-interactive session commands for exploring protocol fields. These ar
 
 ```bash
 # 1. Start session (outputs directory path)
-SESSION=$(./scripts/capture/app_control.sh session-start humidity_test)
+SESSION=$(./scripts/capture/vmictl.py session-start humidity_test)
 # Example output: /tmp/vmi_btlogs/humidity_test_20260205_153000
 
 # 2. Navigate to screen, take checkpoint (outputs screenshot path)
-./scripts/capture/app_control.sh measurements-full
-SCREENSHOT=$(./scripts/capture/app_control.sh session-checkpoint "$SESSION")
+./scripts/capture/vmictl.py measurements-full
+SCREENSHOT=$(./scripts/capture/vmictl.py session-checkpoint "$SESSION")
 # Example output: /tmp/vmi_btlogs/.../checkpoint_1_153045.png
 
 # 3. Read the screenshot to see values, then append to checkpoints.txt
@@ -75,7 +75,7 @@ EOF
 # 4. Repeat steps 2-3 for more checkpoints as needed
 
 # 5. End session and pull btsnoop logs
-./scripts/capture/app_control.sh session-end "$SESSION"
+./scripts/capture/vmictl.py session-end "$SESSION"
 ```
 
 Each checkpoint automatically records a timestamp and screenshot filename. You append the observed values manually (or via agent) after reading each screenshot.
@@ -153,9 +153,9 @@ Byte 60 shows variation and sensor-dependence:
 Use checkpoint captures to correlate displayed values with packet bytes:
 
 ```bash
-SESSION=$(./scripts/capture/app_control.sh session-start humidity_verify)
-./scripts/capture/app_control.sh measurements-full
-IMG=$(./scripts/capture/app_control.sh session-checkpoint "$SESSION")
+SESSION=$(./scripts/capture/vmictl.py session-start humidity_verify)
+./scripts/capture/vmictl.py measurements-full
+IMG=$(./scripts/capture/vmictl.py session-checkpoint "$SESSION")
 # Read screenshot, append values to $SESSION/checkpoints.txt
 ```
 
@@ -163,7 +163,7 @@ IMG=$(./scripts/capture/app_control.sh session-checkpoint "$SESSION")
 2. Take checkpoint, read screenshot, record displayed humidity values
 3. Wait for humidity to change (or create conditions that change it)
 4. Take another checkpoint, record new values
-5. End session: `./scripts/capture/app_control.sh session-end "$SESSION"`
+5. End session: `./scripts/capture/vmictl.py session-end "$SESSION"`
 6. Compare byte 4 and byte 60 values at each checkpoint
 
 ### Key Questions

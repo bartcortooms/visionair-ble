@@ -23,7 +23,6 @@ Required variables:
 
 Optional variables:
 - `VMI_ADB_TARGET` - ADB device serial (e.g., `192.168.1.100:5555` for WiFi ADB)
-- `VMI_RESOLUTION` - Force screen resolution (auto-detected if not set)
 - `ESPHOME_PROXY_HOST` - ESPHome BLE proxy IP (for remote BLE access)
 - `ESPHOME_API_KEY` - ESPHome API key
 
@@ -52,7 +51,7 @@ adb devices
 If multiple ADB devices are connected, specify the target:
 
 ```bash
-VMI_ADB_TARGET=<ip>:5555 ./scripts/capture/app_control.sh <command>
+VMI_ADB_TARGET=<ip>:5555 ./scripts/capture/vmictl.py <command>
 ```
 
 ## Enabling Bluetooth HCI Snoop Logging
@@ -60,7 +59,7 @@ VMI_ADB_TARGET=<ip>:5555 ./scripts/capture/app_control.sh <command>
 ### Via App Control Script
 
 ```bash
-./scripts/capture/app_control.sh btstart
+./scripts/capture/vmictl.py btstart
 ```
 
 ### Manual Steps (Required for Full Captures)
@@ -77,7 +76,7 @@ Without this, you'll get `btsnooz` format (compressed/truncated) instead of full
 ## Pulling BLE Logs
 
 ```bash
-./scripts/capture/app_control.sh btpull
+./scripts/capture/vmictl.py btpull
 ```
 
 This creates a bugreport and extracts the btsnoop log to `/tmp/vmi_btlogs/`.
@@ -106,7 +105,7 @@ python scripts/capture/btsnooz.py /tmp/btsnooz_hci.log /tmp/btsnoop.log
 The app control script automates UI interactions:
 
 ```bash
-./scripts/capture/app_control.sh help
+./scripts/capture/vmictl.py help
 ```
 
 Key commands:
@@ -119,37 +118,27 @@ Key commands:
 - `btpull` - Pull BT snoop logs
 - `resolution` - Show detected screen resolution
 
-## Adding Support for New Screen Resolutions
+## Adapting to App UI Updates
 
-The script uses coordinate mappings per screen resolution. The resolution is auto-detected via `adb shell wm size`.
+`vmictl.py` uses selector-based UI targeting via `scripts/capture/vmi_ui_selectors.toml`,
+not hardcoded screen coordinates.
 
-To add support for a new resolution:
+When the app UI changes:
 
-1. Get the screen resolution:
+1. Dump current UI tree:
    ```bash
-   adb shell wm size
+   ./scripts/capture/vmictl.py ui > /tmp/vmi_ui.xml
    ```
-
-2. Use uiautomator to find element coordinates:
+2. Find updated labels/content descriptions in the XML.
+3. Update relevant entries in `scripts/capture/vmi_ui_selectors.toml`:
+   - `screens.*.requires_desc` for screen fingerprints
+   - `selectors.*.labels` for tappable targets
+4. Re-run smoke commands:
    ```bash
-   adb shell uiautomator dump
-   adb shell cat /sdcard/window_dump.xml
+   ./scripts/capture/vmictl.py menu
+   ./scripts/capture/vmictl.py measurements-full
+   ./scripts/capture/vmictl.py sensors
    ```
-
-3. Add a new case in the `get_coords()` function in `scripts/capture/app_control.sh`:
-   ```bash
-   1234x5678)
-       case "$func" in
-           vmci)       echo "XXX YYY" ;;
-           pair)       echo "XXX YYY" ;;
-           # ... add all coordinates
-       esac
-       ;;
-   ```
-
-Currently supported resolutions:
-- `1080x2340`
-- `1116x2484`
 
 ## Troubleshooting
 
@@ -157,7 +146,7 @@ Currently supported resolutions:
 
 Set `VMI_ADB_TARGET` to specify which device:
 ```bash
-VMI_ADB_TARGET=<serial> ./scripts/capture/app_control.sh <command>
+VMI_ADB_TARGET=<serial> ./scripts/capture/vmictl.py <command>
 ```
 
 ### No btsnoop log in bugreport
@@ -173,9 +162,9 @@ Some phones only support filtered captures by default. Check:
 - Developer Options for unfiltered mode
 - Different phones may have different capabilities
 
-### Wrong tap coordinates
+### Wrong UI target selection
 
-If taps are hitting the wrong elements:
-1. Check your resolution: `./scripts/capture/app_control.sh resolution`
-2. If not supported, add coordinates for your resolution (see above)
-3. Or set `VMI_RESOLUTION` to force a similar resolution
+If navigation/actions hit wrong elements:
+1. Dump UI tree: `./scripts/capture/vmictl.py ui > /tmp/vmi_ui.xml`
+2. Update selectors in `scripts/capture/vmi_ui_selectors.toml`
+3. Re-run navigation smoke commands (`menu`, `measurements-full`, `sensors`)
