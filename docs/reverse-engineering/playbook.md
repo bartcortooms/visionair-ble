@@ -50,43 +50,40 @@ If the automated command fails, verify manually:
 
 **Key principle:** Always record app-displayed values WITH timestamps so they can be correlated with specific packets.
 
-### Interactive Capture Session (Recommended)
+### Checkpoint-Based Capture Session (Recommended)
 
-Use the interactive capture command for exploring protocol fields:
+Use the non-interactive session commands for exploring protocol fields. These are designed for CLI tools and coding agents:
 
 ```bash
-./scripts/capture/app_control.sh capture humidity_test
+# 1. Start session (outputs directory path)
+SESSION=$(./scripts/capture/app_control.sh session-start humidity_test)
+# Example output: /tmp/vmi_btlogs/humidity_test_20260205_153000
+
+# 2. Navigate to screen, take checkpoint (outputs screenshot path)
+./scripts/capture/app_control.sh measurements-full
+SCREENSHOT=$(./scripts/capture/app_control.sh session-checkpoint "$SESSION")
+# Example output: /tmp/vmi_btlogs/.../checkpoint_1_153045.png
+
+# 3. Read the screenshot to see values, then append to checkpoints.txt
+cat >> "$SESSION/checkpoints.txt" << EOF
+remote_temp=19
+remote_humidity=55
+probe1_temp=16
+probe1_humidity=71
+EOF
+
+# 4. Repeat steps 2-3 for more checkpoints as needed
+
+# 5. End session and pull btsnoop logs
+./scripts/capture/app_control.sh session-end "$SESSION"
 ```
 
-This starts an interactive session where you can:
-- Type `c` (checkpoint) at any moment to record:
-  - Precise ISO timestamp
-  - Screenshot of current app screen
-  - Manual entry of displayed values (temp, humidity, etc.)
-- Type `s` (screenshot) to just take a screenshot
-- Type `q` (quit) to end session and pull btsnoop logs
-
-**Workflow example:**
-```
-capture> c
-=== Checkpoint 1 at 2026-02-05T15:30:45+01:00 ===
-Screenshot: checkpoint_1_153045.png
-Enter values shown in app:
-  Remote temp (°C): 19
-  Remote humidity (%): 55
-  Probe1 temp (°C): 16
-  Probe1 humidity (%): 71
-  ...
-Checkpoint 1 saved.
-
-capture> q
-[pulls btsnoop logs]
-```
+Each checkpoint automatically records a timestamp and screenshot filename. You append the observed values manually (or via agent) after reading each screenshot.
 
 **Analysis with checkpoints:**
 ```bash
-python scripts/capture/extract_packets.py session/btsnoop.log \
-    --checkpoints session/checkpoints.txt --window 10
+python scripts/capture/extract_packets.py $SESSION/btsnoop.log \
+    --checkpoints $SESSION/checkpoints.txt --window 10
 ```
 
 This shows packets within ±10 seconds of each checkpoint, with their byte values alongside the recorded app values for easy correlation.
@@ -156,14 +153,18 @@ Byte 60 shows variation and sensor-dependence:
 Use checkpoint captures to correlate displayed values with packet bytes:
 
 ```bash
-./scripts/capture/app_control.sh capture humidity_verify
+SESSION=$(./scripts/capture/app_control.sh session-start humidity_verify)
+./scripts/capture/app_control.sh measurements-full
+IMG=$(./scripts/capture/app_control.sh session-checkpoint "$SESSION")
+# Read screenshot, append values to $SESSION/checkpoints.txt
 ```
 
 1. Navigate to Instantaneous Measurements screen
-2. Record checkpoint with displayed humidity values
+2. Take checkpoint, read screenshot, record displayed humidity values
 3. Wait for humidity to change (or create conditions that change it)
-4. Record another checkpoint
-5. Compare byte 4 and byte 60 values at each checkpoint
+4. Take another checkpoint, record new values
+5. End session: `./scripts/capture/app_control.sh session-end "$SESSION"`
+6. Compare byte 4 and byte 60 values at each checkpoint
 
 ### Key Questions
 

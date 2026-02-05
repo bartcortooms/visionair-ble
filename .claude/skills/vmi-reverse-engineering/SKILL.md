@@ -17,7 +17,9 @@ Control the Ventilairsec VMI+ app via ADB to capture and analyze BLE protocol tr
 ./scripts/capture/app_control.sh connect
 
 # 3. Start capture session
-./scripts/capture/app_control.sh capture my_session
+SESSION=$(./scripts/capture/app_control.sh session-start my_session)
+# Navigate, take checkpoints, record values, then end session
+./scripts/capture/app_control.sh session-end "$SESSION"
 ```
 
 ## Environment Setup
@@ -220,12 +222,14 @@ HOME (fan control buttons)
 **Always record app-displayed values WITH timestamps** for packet correlation.
 
 ### For Protocol Discovery
-1. Start capture session: `./scripts/capture/app_control.sh capture test_name`
+1. Start session: `SESSION=$(./scripts/capture/app_control.sh session-start test_name)`
 2. Navigate to relevant screen
-3. Record checkpoint (`c`) with visible values
-4. Perform action (e.g., change sensor)
-5. Record another checkpoint
-6. Compare packet bytes between checkpoints
+3. Take checkpoint: `IMG=$(./scripts/capture/app_control.sh session-checkpoint "$SESSION")`
+4. Read screenshot, append values to `$SESSION/checkpoints.txt`
+5. Perform action (e.g., change sensor)
+6. Take another checkpoint, record values
+7. End session: `./scripts/capture/app_control.sh session-end "$SESSION"`
+8. Compare packet bytes between checkpoints
 
 ### For Targeted Tests
 One action per capture:
