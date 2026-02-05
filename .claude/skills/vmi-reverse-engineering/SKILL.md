@@ -1,3 +1,8 @@
+---
+name: vmi-reverse-engineering
+description: This skill should be used when the user asks to "reverse engineer VMI", "capture BLE traffic", "analyze VMI protocol", "control VMI app via ADB", "pull btsnoop logs", or discusses Ventilairsec device protocol analysis.
+---
+
 # VMI App Reverse Engineering
 
 Control the Ventilairsec VMI+ app via ADB to capture and analyze BLE protocol traffic.
