@@ -212,11 +212,12 @@ def decode_device_state_packet(hex_data: str) -> dict:
         # Known sensor fields
         'sensor_selector': data[34],      # 0=Probe2, 1=Probe1, 2=Remote
         'active_temp': data[32],          # Live temperature for selected sensor
-        # Use live temp (byte 32) when that sensor is selected, else cached value
-        'remote_temp': data[32] if data[34] == 2 else data[8],
+        # Byte 32 is the ONLY live temperature - others (35, 42) may be stale
+        # Byte 8 is NOT a temperature (always 18 in captures)
+        'remote_temp': data[32] if data[34] == 2 else None,
         'remote_humidity': data[4],       # Byte 4: Remote humidity (direct %)
-        'probe1_temp': data[32] if data[34] == 1 else data[35],
-        'probe2_temp': data[32] if data[34] == 0 else data[42],
+        'probe1_temp': data[32] if data[34] == 1 else data[35],  # byte 35 may be stale
+        'probe2_temp': data[32] if data[34] == 0 else data[42],  # byte 42 may be stale
         # Settings
         'airflow_indicator': data[47],
         'airflow_m3h': airflow_map.get(data[47], f'?{data[47]}'),

@@ -41,7 +41,7 @@ def parse_key_bytes(data: bytes) -> dict:
     return {
         "device_id_b5_7": int.from_bytes(data[5:8], "little"),  # Bytes 5-7, constant per device
         "humidity_b4": data[4],  # Byte 4: Remote humidity %
-        "temp_remote_b8": data[8],
+        "unknown_b8": data[8],  # Always 18 in captures - NOT a temperature
         "volume_b22_23": int.from_bytes(data[22:24], "little"),
         "operating_days_b26_27": int.from_bytes(data[26:28], "little"),
         "filter_days_b28_29": int.from_bytes(data[28:30], "little"),
@@ -173,8 +173,9 @@ async def main(address: str):
         print("\n--- Temperature Comparison: STATUS vs HISTORY ---")
         print(f"  Probe 1:  STATUS B35={parsed.get('temp_probe1_b35')}°C  vs  HISTORY B6={history_parsed.get('temp_probe1_b6')}°C")
         print(f"  Probe 2:  STATUS B42={parsed.get('temp_probe2_b42')}°C  vs  HISTORY B11={history_parsed.get('temp_probe2_b11')}°C")
-        print(f"  Remote:   STATUS B8={parsed.get('temp_remote_b8')}°C  (no history equivalent)")
-        print(f"  Humidity: STATUS B5={parsed.get('humidity_pct')}%  vs  HISTORY B8={history_parsed.get('humidity_probe1_b8')}%")
+        print(f"  Remote:   Use B32 (active_temp) when sensor_selector=2")
+        print(f"  Unknown:  STATUS B8={parsed.get('unknown_b8')} (always 18, not a temperature)")
+        print(f"  Humidity: STATUS B4={parsed.get('humidity_b4')}%  vs  HISTORY B8={history_parsed.get('humidity_probe1_b8')}%")
 
 
 if __name__ == "__main__":
