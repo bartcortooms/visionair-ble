@@ -227,6 +227,53 @@ Typical schedule pattern observed:
 - Mode 1 (LOW): 0h-8h and 18h-23h (night/evening)
 - Mode 2 (MEDIUM): 9h-17h (daytime)
 
+### Schedule Configuration Packets (types 0x46, 0x47)
+
+Captured when changing time slot settings (2026-02-05).
+
+**Type 0x46 - Schedule Data:**
+```
+a5b6 46 06 31 00 <slot_data...>
+          ^^ ^^ ^^^^^^^^^^^^
+          |  |  24 time slots (2 bytes each)
+          |  offset/length?
+          type
+```
+
+**Time slot encoding (2 bytes per hour):**
+
+| Byte | Description |
+|------|-------------|
+| 1 | Preheat temperature (°C), e.g., 0x10 = 16°C |
+| 2 | Mode byte |
+
+**Mode byte values:**
+
+| Mode | Byte | Airflow |
+|------|------|---------|
+| Mode 1 | 0x28 (40) | LOW |
+| Mode 2 | 0x32 (50) | MEDIUM |
+| Mode 3 | ? | HIGH (not captured) |
+
+**Captured example:**
+```
+Slots 0-8:  10 28 (16°C, Mode 1/LOW)  - nighttime
+Slots 9-11: 10 32 (16°C, Mode 2/MED)  - daytime start
+```
+
+**Type 0x47 - Schedule Query/Ack:**
+```
+a5b6 47 06 18 00 08 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 51
+```
+Appears to be a query or acknowledgment packet for schedule operations.
+
+**Settings byte 7 = 0x05 (Schedule command?):**
+```
+a5b61a06061a020509003b35
+              ^^ byte 7 = 0x05 (different from 0x04 Special Mode)
+```
+This may be a schedule-related settings command (needs more research).
+
 ### History Response (type 0x03)
 
 | Offset | Size | Description |
