@@ -189,18 +189,18 @@ def find_packets_near_checkpoint(packets: list, checkpoint_ts: str, window_secon
 def get_type_name(msg_type: int) -> str:
     """Get human-readable name for message type."""
     names = {
-        0x01: 'STATUS',
+        0x01: 'DEVICE_STATE',
         0x02: 'SCHEDULE',
-        0x03: 'HISTORY',
-        0x10: 'QUERY',
+        0x03: 'PROBE_SENSORS',
+        0x10: 'REQUEST',
         0x1a: 'SETTINGS',
-        0x23: 'CONFIG_ACK',
+        0x23: 'SETTINGS_ACK',
     }
     return names.get(msg_type, f'UNKNOWN_{msg_type:02x}')
 
 
-def decode_status_packet(hex_data: str) -> dict:
-    """Decode a status packet (type 0x01) and return all relevant fields."""
+def decode_device_state_packet(hex_data: str) -> dict:
+    """Decode a device state packet (type 0x01) and return all relevant fields."""
     data = bytes.fromhex(hex_data)
     if len(data) < 62:
         return {'error': 'Packet too short'}
@@ -234,8 +234,8 @@ def decode_status_packet(hex_data: str) -> dict:
     }
 
 
-def decode_history_packet(hex_data: str) -> dict:
-    """Decode a history packet (type 0x03)."""
+def decode_probe_sensors_packet(hex_data: str) -> dict:
+    """Decode a probe sensors packet (type 0x03)."""
     data = bytes.fromhex(hex_data)
     if len(data) < 20:
         return {'error': 'Packet too short'}
@@ -294,16 +294,16 @@ def print_summary(packets: dict, output_format: str = 'text'):
     for t, count in sorted(type_counts.items()):
         print(f"  {t}: {count}")
 
-    # Decode and show status packets
-    status_pkts = [p for p in packets['notifies'] if p['type'] == 0x01]
-    if status_pkts:
+    # Decode and show device state packets
+    device_state_pkts = [p for p in packets['notifies'] if p['type'] == 0x01]
+    if device_state_pkts:
         print(f"\n{'='*60}")
-        print(f"STATUS PACKETS ({len(status_pkts)} total)")
+        print(f"DEVICE STATE PACKETS ({len(device_state_pkts)} total)")
         print(f"{'='*60}")
 
-        for i, pkt in enumerate(status_pkts[:5]):  # Show first 5
-            decoded = decode_status_packet(pkt['hex'])
-            print(f"\nStatus #{i+1}:")
+        for i, pkt in enumerate(device_state_pkts[:5]):  # Show first 5
+            decoded = decode_device_state_packet(pkt['hex'])
+            print(f"\nDevice State #{i+1}:")
             print(f"  Remote: {decoded['remote_temp']}°C, {decoded['remote_humidity']}%")
             print(f"  Probe1: {decoded['probe1_temp']}°C")
             print(f"  Probe2: {decoded['probe2_temp']}°C")
@@ -329,15 +329,15 @@ def print_summary(packets: dict, output_format: str = 'text'):
                 print(f"    Summer: {'ON' if decoded['summer_enabled'] else 'OFF'}")
                 print(f"    Airflow: ({decoded['airflow_b1']}, {decoded['airflow_b2']})")
 
-    # Show history packets
-    history_pkts = [p for p in packets['notifies'] if p['type'] == 0x03]
-    if history_pkts:
+    # Show probe sensor packets
+    probe_pkts = [p for p in packets['notifies'] if p['type'] == 0x03]
+    if probe_pkts:
         print(f"\n{'='*60}")
-        print(f"HISTORY PACKETS ({len(history_pkts)} total)")
+        print(f"PROBE SENSOR PACKETS ({len(probe_pkts)} total)")
         print(f"{'='*60}")
 
-        for pkt in history_pkts[:2]:
-            decoded = decode_history_packet(pkt['hex'])
+        for pkt in probe_pkts[:2]:
+            decoded = decode_probe_sensors_packet(pkt['hex'])
             print(f"\n  Byte 6: {decoded['byte6']}")
             print(f"  Byte 8: {decoded['byte8']}")
             print(f"  Byte 13: {decoded['byte13']} (filter %?)")
@@ -373,15 +373,15 @@ def print_checkpoint_correlation(packets: dict, checkpoints: list, window: int =
             continue
 
         nearby = find_packets_near_checkpoint(packets['raw_packets'], ts, window)
-        status_nearby = [p for p in nearby if p['type'] == 0x01]
+        device_state_nearby = [p for p in nearby if p['type'] == 0x01]
 
-        if not status_nearby:
-            print(f"  No STATUS packets within ±{window}s")
+        if not device_state_nearby:
+            print(f"  No DEVICE_STATE packets within ±{window}s")
             continue
 
-        print(f"  Found {len(status_nearby)} STATUS packets nearby:")
-        for pkt in status_nearby[:3]:  # Show up to 3
-            decoded = decode_status_packet(pkt['hex'])
+        print(f"  Found {len(device_state_nearby)} DEVICE_STATE packets nearby:")
+        for pkt in device_state_nearby[:3]:  # Show up to 3
+            decoded = decode_device_state_packet(pkt['hex'])
             print(f"    [{pkt['timestamp']}]")
             print(f"      Byte 4: {decoded.get('bytes_0_10', [0]*5)[4]} (current 'humidity')")
             print(f"      Byte 60: {decoded['byte60']} (÷2 = {decoded['byte60_div2']:.1f}%)")

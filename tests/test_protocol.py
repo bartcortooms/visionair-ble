@@ -181,8 +181,9 @@ class TestStatusParsing:
         assert status.airflow_high == 200  # 363 * 0.55 = 199.65 -> 200
         assert status.airflow == 163  # MEDIUM = airflow_medium
         assert status.temp_remote == 18
-        assert status.temp_probe1 == 16
-        assert status.temp_probe2 == 11
+        # Probe temps are None when sensor_selector != their sensor
+        assert status.temp_probe1 is None
+        assert status.temp_probe2 is None
         assert status.humidity_remote == 52
         assert status.filter_days == 331
         assert status.operating_days == 634

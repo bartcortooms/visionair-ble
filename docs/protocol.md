@@ -74,25 +74,29 @@ XOR all payload bytes (everything between magic prefix and checksum).
 
 Commands are written to characteristic handle 0x0013.
 
-### 4.1 Status & Sensor Queries
+### 4.1 Device State & Sensor Queries
 
-#### Status Request (type 0x10, param 0x03)
+#### Device State Request (type 0x10, param 0x03)
+
+Requests the Device State packet (0x01) containing device config and Remote sensor data.
 
 ```
 a5b6 10 00 05 03 00 00 00 00 16
      │     │              │  └─ checksum
      │     │              └──── zeros
-     │     └───────────────── param 0x03
-     └─────────────────────── type 0x10
+     │     └───────────────── param 0x03 (DEVICE_STATE)
+     └─────────────────────── type 0x10 (REQUEST)
 ```
 
-#### History Request (type 0x10, param 0x07)
+#### Probe Sensors Request (type 0x10, param 0x07)
+
+Requests the Probe Sensors packet (0x03) containing current probe readings.
 
 ```
 a5b6 10 06 05 07 00 00 00 00 14
 ```
 
-Returns history packet with Probe 1 humidity.
+Returns current probe temperatures and humidity (not historical data despite vendor naming).
 
 #### Sensor Select Request (type 0x10, param 0x18)
 
@@ -120,13 +124,13 @@ a5b6 10 06 05 06 00 00 00 00 15
 
 This "get all data" request triggers the device to send a sequence of responses:
 1. SETTINGS_ACK (type 0x23)
-2. STATUS (type 0x01)
+2. DEVICE_STATE (type 0x01) - device config + Remote sensor
 3. SCHEDULE (type 0x02)
-4. SENSOR/HISTORY (type 0x03)
+4. PROBE_SENSORS (type 0x03) - current probe readings
 
 > **Discovered (2026-02-05):** Btsnoop analysis shows the VMI app uses this
-> request heavily for polling. It's more efficient than separate STATUS and
-> HISTORY requests since it gets all data in one request sequence.
+> request heavily for polling. It's more efficient than separate DEVICE_STATE and
+> PROBE_SENSORS requests since it gets all data in one request sequence.
 
 ### 4.2 Device Control
 
@@ -299,14 +303,14 @@ Responses arrive as notifications on characteristic handle 0x000e. Subscribe by 
 
 | Type | Length | Description |
 |------|--------|-------------|
-| `0x01` | 182 bytes | Status response |
-| `0x02` | 182 bytes | Schedule data |
-| `0x03` | 182 bytes | History data |
+| `0x01` | 182 bytes | Device State (config + Remote sensor) |
+| `0x02` | 182 bytes | Schedule (time slot configuration) |
+| `0x03` | 182 bytes | Probe Sensors (current probe readings) |
 | `0x23` | 182 bytes | Settings acknowledgment |
 | `0x46` | varies | Schedule config data |
 | `0x50` | varies | Holiday status |
 
-### 5.1 Status Response (type 0x01)
+### 5.1 Device State Packet (type 0x01)
 
 | Offset | Size | Description | Example |
 |--------|------|-------------|---------|
@@ -386,11 +390,16 @@ The app's "Time slot configuration" UI shows:
 - Per-day or default configuration
 - "Activating time slots" toggle
 
-### 5.3 History Response (type 0x03)
+### 5.3 Probe Sensors Packet (type 0x03)
+
+Contains current/live probe readings. Despite vendor documentation calling this "HISTORY",
+it contains current measurements, not historical data.
 
 | Offset | Size | Description |
 |--------|------|-------------|
+| 6 | 1 | Probe 1 temperature (°C) |
 | 8 | 1 | Probe 1 humidity (direct %) |
+| 11 | 1 | Probe 2 temperature (°C) |
 | 13 | 1 | Filter percentage (100 = new) |
 
 ## 6. Data Encoding Reference

@@ -112,7 +112,7 @@ class VisionAirClient:
         def handler(*args: Any) -> None:
             nonlocal status_data
             data = args[-1]  # data is always last arg
-            if bytes(data[:2]) == MAGIC and data[2] == PacketType.STATUS_RESPONSE:
+            if bytes(data[:2]) == MAGIC and data[2] == PacketType.DEVICE_STATE:
                 status_data = bytes(data)
                 event.set()
 
@@ -155,7 +155,7 @@ class VisionAirClient:
         def handler(*args: Any) -> None:
             nonlocal sensor_data
             data = args[-1]
-            if bytes(data[:2]) == MAGIC and data[2] == PacketType.SENSOR_RESPONSE:
+            if bytes(data[:2]) == MAGIC and data[2] == PacketType.PROBE_SENSORS:
                 sensor_data = bytes(data)
                 event.set()
 
@@ -214,7 +214,7 @@ class VisionAirClient:
 
         event = asyncio.Event()
         current_data: bytes | None = None
-        expected_type: int = PacketType.STATUS_RESPONSE
+        expected_type: int = PacketType.DEVICE_STATE
 
         def handler(*args: Any) -> None:
             nonlocal current_data
@@ -257,7 +257,7 @@ class VisionAirClient:
 
             # Request sensor packet for Probe 1 humidity (with retries)
             if self._client.is_connected:
-                expected_type = PacketType.SENSOR_RESPONSE
+                expected_type = PacketType.PROBE_SENSORS
                 for attempt in range(retries + 1):
                     if not self._client.is_connected:
                         break
@@ -281,7 +281,7 @@ class VisionAirClient:
             # (byte 5 in sensor select responses may be stale)
             if self._client.is_connected:
                 await asyncio.sleep(delay)
-                expected_type = PacketType.STATUS_RESPONSE
+                expected_type = PacketType.DEVICE_STATE
                 for attempt in range(retries + 1):
                     if not self._client.is_connected:
                         break
