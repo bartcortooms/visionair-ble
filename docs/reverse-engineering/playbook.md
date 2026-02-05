@@ -48,9 +48,52 @@ If the automated command fails, verify manually:
 
 ## Capture Discipline (Critical)
 
-Each test run must have **one UI change only**.
+**Key principle:** Always record app-displayed values WITH timestamps so they can be correlated with specific packets.
 
-For every run:
+### Interactive Capture Session (Recommended)
+
+Use the interactive capture command for exploring protocol fields:
+
+```bash
+./scripts/capture/app_control.sh capture humidity_test
+```
+
+This starts an interactive session where you can:
+- Type `c` (checkpoint) at any moment to record:
+  - Precise ISO timestamp
+  - Screenshot of current app screen
+  - Manual entry of displayed values (temp, humidity, etc.)
+- Type `s` (screenshot) to just take a screenshot
+- Type `q` (quit) to end session and pull btsnoop logs
+
+**Workflow example:**
+```
+capture> c
+=== Checkpoint 1 at 2026-02-05T15:30:45+01:00 ===
+Screenshot: checkpoint_1_153045.png
+Enter values shown in app:
+  Remote temp (°C): 19
+  Remote humidity (%): 55
+  Probe1 temp (°C): 16
+  Probe1 humidity (%): 71
+  ...
+Checkpoint 1 saved.
+
+capture> q
+[pulls btsnoop logs]
+```
+
+**Analysis with checkpoints:**
+```bash
+python scripts/capture/extract_packets.py session/btsnoop.log \
+    --checkpoints session/checkpoints.txt --window 10
+```
+
+This shows packets within ±10 seconds of each checkpoint, with their byte values alongside the recorded app values for easy correlation.
+
+### Single-Action Runs (Original Method)
+
+For targeted tests, each run should have **one UI change only**:
 
 1. Enable snoop logging ("Enabled", not filtered), restart BT
 2. Start from app Home screen
@@ -70,7 +113,7 @@ RUN_030_press_boost
 ### Record Per Run
 
 - Screenshot path + what value is visible
-- Exact timestamp of action
+- **Exact timestamp of action** (use `date -Iseconds` before/after)
 - Writes to handle `0x0013` (hex payloads)
 - Notifications from handle `0x000e` (type 0x01/0x02/0x03/0x23 payloads)
 
@@ -93,13 +136,40 @@ See [PROTOCOL_SPEC.md](PROTOCOL_SPEC.md) for full protocol documentation.
 
 ---
 
-## Phase 1: Probe 1 Humidity
+## Phase 1: Humidity Field Verification
 
-Force **UI-driven sensor selection** differences to identify humidity bytes.
+**Status:** Byte 4 was identified as remote humidity, but needs verification with correlated captures.
 
-### Hypothesis
+### The Problem
 
-When the selected sensor changes in the app, some byte(s) in the status packet should change from Remote humidity to Probe1 humidity values.
+Analysis of 1721 STATUS packets showed byte 4 is always 55, never varying. This could mean:
+- The room humidity was actually stable at 55%
+- Byte 4 is a cached/baseline value, not live humidity
+- We're reading the wrong byte
+
+Byte 60 shows variation and sensor-dependence:
+- Remote sensor: ~55-65% when divided by 2
+- Probe1 sensor: ~50-79% when divided by 2
+
+### Verification Method
+
+Use checkpoint captures to correlate displayed values with packet bytes:
+
+```bash
+./scripts/capture/app_control.sh capture humidity_verify
+```
+
+1. Navigate to Instantaneous Measurements screen
+2. Record checkpoint with displayed humidity values
+3. Wait for humidity to change (or create conditions that change it)
+4. Record another checkpoint
+5. Compare byte 4 and byte 60 values at each checkpoint
+
+### Key Questions
+
+- Does byte 4 change when app-displayed humidity changes?
+- Does byte 60 ÷ 2 match the displayed humidity for each sensor?
+- Is humidity reporting sensor-dependent (different bytes for different sensors)?
 
 ### Runs
 
@@ -110,8 +180,8 @@ When the selected sensor changes in the app, some byte(s) in the status packet s
 ### Analysis
 
 1. Extract all `a5b6 01 06 ...` packets (type 0x01)
-2. Compute byte-diff between "Remote selected" vs "Probe1 selected"
-3. Find bytes that match humidity values (raw or scaled)
+2. Use `--checkpoints` to correlate with recorded values
+3. Compare byte 4 and byte 60 against displayed humidity
 
 ---
 
@@ -215,9 +285,23 @@ From each btsnoop:
 - Notifications from status char: `btatt.opcode == 0x1b && btatt.handle == 0x000e`
 - Classify by type byte: `payload[2]`
 
-Use the extraction script:
+### Extraction Scripts
+
+**Basic extraction:**
 ```bash
-python scripts/ble-capture/extract_packets.py captures/btsnoop_001.log
+python scripts/capture/extract_packets.py session/btsnoop.log
+```
+
+**With checkpoint correlation** (for matching packet bytes to app values):
+```bash
+python scripts/capture/extract_packets.py session/btsnoop.log \
+    --checkpoints session/checkpoints.txt \
+    --window 10
+```
+
+**Output status packets as hex** (for batch analysis):
+```bash
+python scripts/capture/extract_packets.py session/btsnoop.log --status-hex
 ```
 
 ---
