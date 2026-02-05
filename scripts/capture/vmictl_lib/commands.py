@@ -52,7 +52,8 @@ def _cmd_firmware_update(ctl: VMICtl, args: list[str]) -> int:
 def _cmd_nav(name: str) -> Callable[[VMICtl, list[str]], int]:
     def handler(ctl: VMICtl, args: list[str]) -> int:
         ctl.nav(name)
-        ctl.screenshot(f"/tmp/vmi_{name.replace('-', '_')}.png")
+        shot = ctl.capture_data_dir / f"vmi_{name.replace('-', '_')}.png"
+        ctl.screenshot(str(shot))
         return 0
 
     return handler

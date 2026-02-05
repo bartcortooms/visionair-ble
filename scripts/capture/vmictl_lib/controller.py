@@ -118,7 +118,7 @@ class VMICtl:
         print("BT snoop full mode enabled.")
 
     def pull_btsnoop(self, output_dir: Path | None = None) -> Path:
-        outdir = output_dir or Path("/tmp/vmi_btlogs")
+        outdir = output_dir or self.capture_data_dir
         outdir.mkdir(parents=True, exist_ok=True)
         ts = time.strftime("%Y%m%d_%H%M%S")
         bugreport = outdir / f"bugreport_{ts}.zip"
@@ -178,8 +178,15 @@ class VMICtl:
         self.screenshot("/tmp/vmi_scan_result.png")
 
         print("Tapping PAIR...")
-        self.ui.tap_pair()
-        time.sleep(4)
+        paired = False
+        for _ in range(3):
+            self.ui.tap_pair()
+            time.sleep(3)
+            if self.ui.has_selector("dialog_firmware_prompt") or self.ui.screen_matches("home"):
+                paired = True
+                break
+        if not paired:
+            print("PAIR did not transition to expected state; continuing with dialog/home checks.")
         self.screenshot("/tmp/vmi_03_paired.png")
 
         print("Dismissing firmware dialog if visible...")
@@ -209,7 +216,7 @@ class VMICtl:
 
     def session_start(self, name: str) -> Path:
         ts = time.strftime("%Y%m%d_%H%M%S")
-        path = Path("/tmp/vmi_btlogs") / f"{name}_{ts}"
+        path = self.capture_data_dir / f"{name}_{ts}"
         path.mkdir(parents=True, exist_ok=True)
         (path / "session_start.txt").write_text(time.strftime("%Y-%m-%dT%H:%M:%S%z"), encoding="utf-8")
         (path / "checkpoint_count.txt").write_text("0", encoding="utf-8")

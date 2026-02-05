@@ -100,15 +100,17 @@ BLE GATT doesn't need this — packets are already framed by the protocol. Inclu
 3. **BLE_gatt.c generated file** — Contains UUID definitions in `cyBle_attUuid128[][16u]` array
 4. **Firmware updates** — If the device supports OTA, the update format might reveal more
 
-### 5. RTC Implementation Explains Timestamp Behavior
+### 5. RTC Implementation (legacy special-mode hypothesis)
 
-VisionAir's special mode commands include HH:MM:SS timestamps. The PSoC BLE RTC example (Day033) shows why:
+Older captures suggested special-mode commands might include HH:MM:SS values.
+The PSoC BLE RTC example (Day033) still provides useful background:
 
 - PSoC uses **Watchdog Timer** for 1-second interrupts to maintain time
 - The `CYBLE_CTS_CURRENT_TIME_T` struct stores hours, minutes, seconds
 - Time sync from app is common because low-power devices lack battery-backed RTC
 
-This explains why VisionAir sends current time with Holiday/Night Vent commands — the device likely needs time sync or uses the timestamp to calculate mode expiration.
+This could explain time-coupled mode handling if that command path is still present.
+Recent controlled captures show Holiday control via `REQUEST 0x1a` value packets instead.
 
 ### 6. BLE Event Handler Pattern
 
@@ -146,7 +148,7 @@ VisionAir's command processing likely follows this exact structure — matching 
 
 - Does the device expose UART for debugging/configuration?
 - Is there an installer/factory mode accessible via BLE?
-- What differentiates Holiday/Night Vent/Fixed Air Flow commands? (May be state machine on device)
+- What differentiates Holiday/Night Vent/Fixed Air Flow commands in current firmware path? (May be state machine on device)
 - Is there a bootloader for OTA updates? (PSoC supports this)
 
 ### 7. Temperature Measurement Pattern
@@ -173,7 +175,7 @@ Based on PSoC-4-BLE code analysis:
 1. **Based on Day003 Custom Profile** — Identical handles (0x000e, 0x0013, 0x000f)
 2. **Struct serialization** — `CYBLE_CYPACKED` structs sent via `CyBle_GattsNotification()`
 3. **Event-driven command processing** — `CustomEventHandler()` matches attribute handles
-4. **WDT-based timekeeping** — Explains timestamp sync in special mode commands
+4. **WDT-based timekeeping** — Potentially relevant if timestamp-based mode commands are used
 5. **Thermistor ADC measurement** — Standard PSoC pattern for temperature probes
 6. **UART heritage** — Magic bytes + XOR checksum from pre-BLE serial protocol
 

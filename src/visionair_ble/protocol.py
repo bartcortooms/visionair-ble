@@ -147,7 +147,7 @@ class RequestParam:
     PROBE_SENSORS = 0x07        # Request probe sensor readings
     SENSOR_SELECT = 0x18        # Set sensor cycle
     BOOST = 0x19                # Activate BOOST
-    REQUEST_1A = 0x1A           # Observed request, purpose unknown
+    REQUEST_1A = 0x1A           # Holiday value request in current VMI workflow
     HOLIDAY_STATUS = 0x2C       # Query holiday mode status
 
 
@@ -534,14 +534,14 @@ def build_boost_command(enable: bool) -> bytes:
 # ⚠️  EXPERIMENTAL - Protocol understanding is incomplete!
 #
 # What we know:
-# - All special modes use Settings command with byte 7 = 0x04
-# - Byte 8 is a sequence counter that increments per command
-# - Bytes 9-10 encode mode-specific data (Holiday end date is time-dependent)
+# - Current Holiday workflow uses REQUEST param 0x1a with value in byte 9
+# - OFF/clear is sent as REQUEST param 0x1a with value 0x00
+# - Holiday status query uses REQUEST param 0x2c
 #
 # What we DON'T know:
-# - The encoding algorithm for bytes 9-10
-# - How to deactivate special modes (no OFF packets captured)
-# - Fixed Air Flow encoding
+# - Whether a separate ON-activation packet exists beyond value-setting
+# - Night Ventilation / Fixed Air Flow packet mapping
+# - Full decoding of Holiday status (type 0x50)
 #
 # These functions require _experimental=True flag to acknowledge the risks.
 
@@ -563,10 +563,10 @@ def _require_experimental(flag: bool, feature: str) -> None:
 
 
 def build_request_1a(*, _experimental: bool = False) -> bytes:
-    """Build observed request 0x1a (purpose unknown).
+    """Build Holiday value request (request param 0x1a).
 
-    ⚠️  EXPERIMENTAL: The purpose of request param 0x1a is unknown.
-    Do not assume it sets Holiday days.
+    ⚠️  EXPERIMENTAL: Confirmed in current VMI workflow for Holiday day value
+    updates and clear/off (value 0). Broader behavior is still not fully decoded.
 
     Args:
         _experimental: Must be True to use this function

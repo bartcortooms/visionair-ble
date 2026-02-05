@@ -163,7 +163,7 @@ Structure: `a5b6 1a 06 06 1a <preheat> <mode> <temp> <af1> <af2> <checksum>`
 |-------|---------|
 | `0x00` | Normal settings (summer limit OFF) |
 | `0x02` | Normal settings (summer limit ON) |
-| `0x04` | Special Mode command (Holiday/Night Vent/Fixed Air) |
+| `0x04` | Special mode settings variant (legacy captures only; not observed in current Holiday workflow) |
 | `0x05` | Schedule command |
 
 **Airflow mode encoding (bytes 9-10):**
@@ -188,37 +188,28 @@ Structure: `a5b6 1a 06 06 1a <preheat> <mode> <temp> <af1> <af2> <checksum>`
 > **⚠️ EXPERIMENTAL:** These features have significant gaps in protocol understanding.
 > See [Open Questions](#open-questions) for details. Use with caution.
 
-All special modes use the Settings Command with byte 7 = `0x04`.
-
-**What we know (high confidence):**
-- **Byte 8 is a sequence counter** that increments with each special-mode command.
-- **Bytes 9-10 are mode-specific** and time-dependent for Holiday mode (encoded end date).
-- The same `0x04` structure is used for Holiday and Night Ventilation.
-
-**What we don't know:**
-- The encoding algorithm for bytes 9-10
-- Fixed Air Flow encoding
-- How to deactivate special modes (no OFF packets captured)
+**Capture-backed update (2026-02-05, controlled run):**
+- Capture session: `data/captures/issue12_final2_20260205_225506`
+- Authoritative source: VMI app actions with timestamped checkpoints
+- In this workflow, Holiday control is done via `REQUEST` (type `0x10`) with param `0x1a`
+- No `SETTINGS` packet with byte 7 = `0x04` was observed
 
 #### Holiday Mode
 
 **What we know:**
-- Activation sequence involves days query followed by Settings 0x04 command
-- Days query sets the duration
-- Activation command includes current time as HH:MM:SS
+- Setting Holiday days sends `REQUEST` param `0x1a` with value in byte 9
+- Toggling Holiday OFF sends the same request with value `0x00`
+- Holiday status polling uses `REQUEST` param `0x2c` and returns type `0x50`
+
+Observed examples from the controlled capture:
+- Days = 3: `a5b61006051a000000030a`
+- Days = 7: `a5b61006051a000000070e`
+- OFF/clear: `a5b61006051a0000000009`
 
 **What we DON'T know:**
-- How to deactivate/cancel Holiday mode (no OFF packets captured)
-- Whether the days value persists or needs to be sent every time
-- How the device reports remaining Holiday time
-
-**Activation (observed):**
-
-- Settings command with byte 7 = `0x04`
-- Byte 8 increments (sequence counter)
-- Bytes 9-10 encode the end date in a time-dependent way
-
-We do not have a valid encoder yet, so we cannot generate correct Holiday commands.
+- Whether there is an additional distinct ON-activation packet beyond setting days
+- Full structure/meaning of the type `0x50` Holiday status payload
+- Whether alternate app paths emit a `SETTINGS`-based special-mode command
 
 **Holiday status query (param 0x2c):**
 ```
@@ -230,23 +221,22 @@ Returns type 0x50 response (structure not yet decoded).
 #### Night Ventilation Boost
 
 **What we know:**
-- Uses the same packet structure as Holiday mode (byte 7 = `0x04`, bytes 8-9-10 = HH:MM:SS)
+- UI toggle exists and is controllable from VMI app
 
 **What we DON'T know:**
-- How the device distinguishes this from Holiday mode — packets appear identical
-- Whether a preceding query is required to select this mode
-- How to deactivate it
+- Packet mapping for this mode in current captures
+- Whether this uses `REQUEST` (`0x10`) or `SETTINGS` (`0x1a`) path
+- OFF behavior at protocol level
 
 #### Fixed Air Flow Rate
 
 **What we know:**
-- Uses the same packet structure as Holiday mode (byte 7 = `0x04`, bytes 8-9-10 = HH:MM:SS)
+- UI toggle exists and is controllable from VMI app
 
 **What we DON'T know:**
-- How the device distinguishes this from Holiday mode — packets appear identical
-- Whether a preceding query is required to select this mode
-- How to deactivate it
-- What airflow rate it uses (the current mode? a specific rate?)
+- Packet mapping for this mode in current captures
+- Whether this uses `REQUEST` (`0x10`) or `SETTINGS` (`0x1a`) path
+- OFF behavior and selected airflow behavior
 
 ### 4.4 Schedule Commands
 
@@ -425,12 +415,18 @@ The volume is configured during professional installation based on the ventilate
 
 ### 6.3 Special Mode Encoding
 
-Special mode commands (byte 7 = 0x04) use:
+Current confirmed Holiday control encoding in VMI workflow:
 
-| Byte | Meaning |
-|------|---------|
-| 8 | Sequence counter (increments per command) |
-| 9-10 | Mode-specific encoded values (Holiday uses time-dependent end date) |
+| Packet | Meaning |
+|--------|---------|
+| `a5b61006051a000000NNCC` | Holiday value command (`NN` = days/clear value, `CC` = checksum) |
+
+Where:
+- `0x10` packet type (`REQUEST`)
+- Request param `0x1a` in byte 5
+- Byte 9 carries Holiday value (observed: `0x03`, `0x07`, `0x00`)
+
+`SETTINGS` byte7=`0x04` remains unconfirmed for current Holiday control path.
 
 ## 7. Library
 
@@ -461,9 +457,9 @@ See [implementation-status.md](implementation-status.md) for feature implementat
 ### Open Questions
 
 **Special Modes:**
-- How to decode bytes 9-10 for Holiday and Night Ventilation
-- Fixed Air Flow encoding
-- How to explicitly deactivate special modes (toggle OFF behavior)
+- Whether a distinct Holiday ON activation packet exists beyond value-setting
+- Night Ventilation packet mapping and encoding
+- Fixed Air Flow packet mapping and encoding
 
 **Schedule:**
 - Schedule Mode 3 (HIGH) byte value — not captured

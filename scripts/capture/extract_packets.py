@@ -168,6 +168,8 @@ def find_packets_near_checkpoint(packets: list, checkpoint_ts: str, window_secon
     try:
         # Parse ISO timestamp
         cp_dt = datetime.fromisoformat(checkpoint_ts)
+        if cp_dt.tzinfo is not None:
+            cp_dt = cp_dt.replace(tzinfo=None)
     except ValueError:
         return []
 
@@ -175,6 +177,8 @@ def find_packets_near_checkpoint(packets: list, checkpoint_ts: str, window_secon
     for pkt in packets:
         try:
             pkt_dt = datetime.fromisoformat(pkt['timestamp'])
+            if pkt_dt.tzinfo is not None:
+                pkt_dt = pkt_dt.replace(tzinfo=None)
             diff = abs((pkt_dt - cp_dt).total_seconds())
             if diff <= window_seconds:
                 matching.append((pkt, diff))
