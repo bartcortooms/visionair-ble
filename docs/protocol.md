@@ -64,19 +64,11 @@ All packets use:
 
 ### Checksum Calculation
 
-```python
-def calc_checksum(payload: bytes) -> int:
-    """XOR all bytes in payload."""
-    result = 0
-    for b in payload:
-        result ^= b
-    return result
+XOR all payload bytes (everything between magic prefix and checksum).
 
-def build_packet(payload: bytes) -> bytes:
-    """Build packet with magic prefix and checksum."""
-    checksum = calc_checksum(payload)
-    return b'\xa5\xb6' + payload + bytes([checksum])
-```
+**Example:** `a5b6 10 00 05 03 00 00 00 00 16`
+- Payload: `10 00 05 03 00 00 00 00`
+- Checksum: `0x10 ^ 0x00 ^ 0x05 ^ 0x03 ^ 0x00 ^ 0x00 ^ 0x00 ^ 0x00` = `0x16`
 
 ## 4. Commands Reference
 
@@ -370,35 +362,7 @@ Special mode commands (byte 7 = 0x04) encode the current time in bytes 8-9-10:
 | 9 | Minute (0-59) |
 | 10 | Second (0-59) |
 
-## 7. Library Usage
-
-```python
-from datetime import datetime
-
-def calc_checksum(payload: bytes) -> int:
-    result = 0
-    for b in payload:
-        result ^= b
-    return result
-
-def build_holiday_days_query(days: int) -> bytes:
-    """Build query to set Holiday mode days."""
-    payload = bytes([0x10, 0x06, 0x05, 0x1a, 0x00, 0x00, 0x00, days])
-    return b'\xa5\xb6' + payload + bytes([calc_checksum(payload)])
-
-def build_holiday_activate(preheat_enabled: bool = True) -> bytes:
-    """Build Holiday mode activation command."""
-    now = datetime.now()
-    payload = bytes([
-        0x1a, 0x06, 0x06, 0x1a,
-        0x02 if preheat_enabled else 0x00,  # preheat
-        0x04,                                # special mode flag
-        now.hour,
-        now.minute,
-        now.second,
-    ])
-    return b'\xa5\xb6' + payload + bytes([calc_checksum(payload)])
-```
+## 7. Library
 
 See [implementation-status.md](implementation-status.md) for feature implementation tracking.
 
