@@ -189,8 +189,8 @@ class DeviceStateOffset:
     """
 
     TYPE = 2
-    DEVICE_ID = 4               # 4 bytes, little-endian
-    HUMIDITY = 4                # Humidity % from remote
+    HUMIDITY = 4                # Humidity % from remote (1 byte)
+    UNKNOWN_5_7 = 5             # Constant per device (3 bytes) - possibly device identifier
     UNKNOWN_8 = 8               # Always 18 in captures - NOT live temp (see TEMP_ACTIVE)
     CONFIGURED_VOLUME = 22      # 2 bytes, little-endian
     OPERATING_DAYS = 26         # 2 bytes, little-endian
@@ -289,7 +289,7 @@ class DeviceStatus:
     """
 
     # Internal fields (no sensor metadata)
-    device_id: int
+    device_id: int  # Bytes 5-7, constant per device (not a true ID, just a unique-ish value)
     airflow_indicator: int
     sensor_selector: int
     sensor_name: str
@@ -774,7 +774,8 @@ def parse_status(data: bytes) -> DeviceStatus | None:
         )
 
     return DeviceStatus(
-        device_id=int.from_bytes(data[DeviceStateOffset.DEVICE_ID:DeviceStateOffset.DEVICE_ID + 4], "little"),
+        # Bytes 5-7 are constant per device, use as pseudo-identifier (3 bytes, LE)
+        device_id=int.from_bytes(data[DeviceStateOffset.UNKNOWN_5_7:DeviceStateOffset.UNKNOWN_5_7 + 3], "little"),
         configured_volume=configured_volume,
         airflow=airflow,
         airflow_low=airflow_low,

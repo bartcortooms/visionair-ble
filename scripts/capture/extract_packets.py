@@ -208,14 +208,13 @@ def decode_device_state_packet(hex_data: str) -> dict:
     airflow_map = {38: 131, 104: 164, 194: 201}
 
     return {
-        'device_id': struct.unpack('<I', data[4:8])[0],
+        'device_id': int.from_bytes(data[5:8], 'little'),  # Bytes 5-7, constant per device
         # Known sensor fields
         'sensor_selector': data[34],      # 0=Probe2, 1=Probe1, 2=Remote
         'active_temp': data[32],          # Live temperature for selected sensor
         # Use live temp (byte 32) when that sensor is selected, else cached value
         'remote_temp': data[32] if data[34] == 2 else data[8],
-        'remote_humidity_raw': data[4],   # Remote humidity (direct %)
-        'remote_humidity': data[4],
+        'remote_humidity': data[4],       # Byte 4: Remote humidity (direct %)
         'probe1_temp': data[32] if data[34] == 1 else data[35],
         'probe2_temp': data[32] if data[34] == 0 else data[42],
         # Settings

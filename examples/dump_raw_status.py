@@ -39,9 +39,8 @@ def parse_key_bytes(data: bytes) -> dict:
         return {}
 
     return {
-        "device_id": int.from_bytes(data[4:8], "little"),
-        "humidity_raw_b4": data[4],
-        "humidity_pct": data[4],
+        "device_id_b5_7": int.from_bytes(data[5:8], "little"),  # Bytes 5-7, constant per device
+        "humidity_b4": data[4],  # Byte 4: Remote humidity %
         "temp_remote_b8": data[8],
         "volume_b22_23": int.from_bytes(data[22:24], "little"),
         "operating_days_b26_27": int.from_bytes(data[26:28], "little"),
