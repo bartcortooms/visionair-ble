@@ -154,8 +154,8 @@ class TestStatusParsing:
         packet = bytearray(70)
         packet[0:2] = b"\xa5\xb6"  # magic
         packet[2] = 0x01  # type
-        packet[4:8] = (12345678).to_bytes(4, "little")  # device ID
-        packet[5] = 104  # humidity raw (52%)
+        packet[4] = 52  # humidity (direct %)
+        packet[5:8] = (12345678).to_bytes(4, "little")[:3]  # device ID (partial)
         packet[8] = 18  # remote temp
         packet[22:24] = (363).to_bytes(2, "little")  # configured volume
         packet[26:28] = (634).to_bytes(2, "little")  # operating days
@@ -182,7 +182,7 @@ class TestStatusParsing:
         assert status.temp_remote == 18
         assert status.temp_probe1 == 16
         assert status.temp_probe2 == 11
-        assert status.humidity_remote == 52.0
+        assert status.humidity_remote == 52
         assert status.filter_days == 331
         assert status.operating_days == 634
         assert status.preheat_enabled is True

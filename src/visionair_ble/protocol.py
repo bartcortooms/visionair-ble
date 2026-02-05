@@ -176,7 +176,7 @@ class StatusOffset:
 
     TYPE = 2
     DEVICE_ID = 4               # 4 bytes, little-endian
-    HUMIDITY_RAW = 5            # Humidity * 2 from remote
+    HUMIDITY = 4                # Humidity % from remote
     TEMP_REMOTE = 8             # Room temperature (from remote)
     CONFIGURED_VOLUME = 22      # 2 bytes, little-endian
     OPERATING_DAYS = 26         # 2 bytes, little-endian
@@ -768,9 +768,8 @@ def parse_status(data: bytes) -> DeviceStatus | None:
         airflow_mode = "high"
         airflow = airflow_high or AirflowLevel.HIGH
 
-    # Humidity from byte 5 (divide by 2 for percentage)
-    humidity_raw = data[StatusOffset.HUMIDITY_RAW] if len(data) > StatusOffset.HUMIDITY_RAW else 0
-    humidity = humidity_raw / 2 if humidity_raw else None
+    # Humidity from remote
+    humidity = data[StatusOffset.HUMIDITY] if len(data) > StatusOffset.HUMIDITY else None
 
     # Equipment life fields (little-endian uint16)
     filter_days = None
