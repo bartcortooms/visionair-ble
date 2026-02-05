@@ -258,6 +258,76 @@ class TestFreshStatus:
 
 
 @pytest.mark.e2e
+class TestFreshStatusReliability:
+    """Test that get_fresh_status reliably returns all sensor readings.
+
+    This catches intermittent failures where stale BLE notifications
+    cause sensor_select responses to be misattributed, resulting in
+    None values for temp_remote or humidity_probe1.
+    """
+
+    ITERATIONS = 5
+
+    @pytest.mark.asyncio
+    async def test_fresh_status_all_sensors_repeated(
+        self, device_address: str | None, proxy_host: str | None, proxy_key: str | None
+    ) -> None:
+        """Call get_fresh_status multiple times; every iteration must return all sensors."""
+        address = await find_device(device_address)
+        failures: list[str] = []
+        connection_retries = 2
+
+        for i in range(1, self.ITERATIONS + 1):
+            # Brief pause between iterations to let the proxy recover
+            if i > 1:
+                await asyncio.sleep(2)
+
+            # Retry connection failures (proxy can be flaky between runs)
+            for attempt in range(connection_retries + 1):
+                try:
+                    async with connect(address, proxy_host, proxy_key) as client:
+                        visionair = VisionAirClient(client)
+                        status = await visionair.get_fresh_status()
+
+                        missing = []
+                        if status.temp_remote is None:
+                            missing.append("temp_remote")
+                        if status.temp_probe1 is None:
+                            missing.append("temp_probe1")
+                        if status.temp_probe2 is None:
+                            missing.append("temp_probe2")
+                        if status.humidity_remote is None:
+                            missing.append("humidity_remote")
+                        if status.humidity_probe1 is None:
+                            missing.append("humidity_probe1")
+
+                        if missing:
+                            msg = f"Run {i}: missing {', '.join(missing)}"
+                            failures.append(msg)
+                            print(f"  FAIL {msg}")
+                        else:
+                            print(
+                                f"  Run {i}: OK "
+                                f"(remote={status.temp_remote}°C/{status.humidity_remote}%, "
+                                f"p1={status.temp_probe1}°C/{status.humidity_probe1}%, "
+                                f"p2={status.temp_probe2}°C)"
+                            )
+                    break  # Connection succeeded, move to next iteration
+                except ConnectionError:
+                    if attempt < connection_retries:
+                        print(f"  Run {i}: connection failed, retrying...")
+                        await asyncio.sleep(5)
+                    else:
+                        print(f"  Run {i}: connection failed after {connection_retries + 1} attempts")
+                        raise
+
+        assert not failures, (
+            f"{len(failures)}/{self.ITERATIONS} iterations had missing sensors:\n"
+            + "\n".join(f"  {f}" for f in failures)
+        )
+
+
+@pytest.mark.e2e
 class TestMultipleOperations:
     """Test multiple operations in sequence."""
 

@@ -179,26 +179,30 @@ class VisionAirClient:
 
     async def get_fresh_status(
         self,
-        timeout: float = 3.0,
+        timeout: float = 5.0,
         retries: int = 2,
         delay: float = 0.5,
     ) -> DeviceStatus:
         """Get device status with fresh sensor readings.
 
-        This method explicitly requests readings from each sensor (Probe2,
-        Probe1, Remote) to collect fresh temperature values, and also fetches
-        Probe 1 humidity from the sensor packet. The regular get_status()
-        method may return stale cached values.
+        This method requests probe sensor data and switches to the remote
+        sensor to collect fresh temperature and humidity values. The regular
+        get_status() method returns only the currently-selected sensor's
+        temperature.
+
+        The handler collects ALL notifications without filtering by type,
+        since the device has limited notification throughput through ESPHome
+        proxies and we can't afford to miss any.
 
         Humidity sources:
-        - Remote humidity: STATUS packet byte 4
-        - Probe 1 humidity: SENSOR packet byte 8
+        - Remote humidity: DEVICE_STATE packet byte 4 (always present)
+        - Probe 1 humidity: PROBE_SENSORS packet byte 8
         - Probe 2: No humidity sensor
 
         Args:
-            timeout: How long to wait for each response in seconds (default 3.0)
-            retries: Number of retry attempts per sensor (default 1)
-            delay: Delay between requests in seconds (default 0.5)
+            timeout: How long to wait for each notification in seconds
+            retries: Number of retry attempts for remote temp
+            delay: Delay between retries in seconds
 
         Returns:
             DeviceStatus with fresh temperature and humidity readings
@@ -207,130 +211,110 @@ class VisionAirClient:
             TimeoutError: If no status responses received at all
         """
         self._find_characteristics()
+        from dataclasses import replace
 
-        fresh_temps: dict[int, int] = {}  # selector -> temp
-        last_status_data: bytes | None = None
-        probe1_humidity: int | None = None
-
-        event = asyncio.Event()
-        current_data: bytes | None = None
-        expected_type: int = PacketType.DEVICE_STATE
+        probe_data: bytes | None = None
+        state_packets: list[bytes] = []
+        new_packet = asyncio.Event()
 
         def handler(*args: Any) -> None:
-            nonlocal current_data
-            data = args[-1]
-            if bytes(data[:2]) == MAGIC and data[2] == expected_type:
-                current_data = bytes(data)
-                event.set()
+            nonlocal probe_data
+            data = bytes(args[-1])
+            if bytes(data[:2]) != MAGIC:
+                return
+            if data[2] == PacketType.PROBE_SENSORS:
+                probe_data = data
+            elif data[2] == PacketType.DEVICE_STATE:
+                state_packets.append(data)
+            new_packet.set()
 
         await self._client.start_notify(self._status_char, handler)
         try:
-            # Request fresh temperature readings from each sensor
-            # Sensor 0 = Probe2 (inlet), 1 = Probe1 (outlet), 2 = Remote
-            for sensor in (0, 1, 2):
-                # Retry loop for reliability
-                # The device may respond with the previous sensor's data before
-                # switching, especially for the Remote sensor (RF delay).
-                # We verify the response matches the requested sensor.
-                for attempt in range(retries + 1):
-                    if not self._client.is_connected:
-                        break  # Don't retry if disconnected
-                    event.clear()
-                    current_data = None
-                    try:
-                        await self._client.write_gatt_char(
-                            self._command_char, build_sensor_select_request(sensor), response=True
-                        )
-                        await asyncio.wait_for(event.wait(), timeout=timeout)
-                        # Verify response matches requested sensor
-                        if current_data and len(current_data) >= 43:
-                            selector = current_data[34]
-                            if selector == sensor:
-                                fresh_temps[selector] = current_data[32]
-                                last_status_data = current_data
-                                break  # Got correct sensor data
-                            # Wrong selector - device hasn't switched yet
-                    except TimeoutError:
-                        pass  # Will retry if attempts remain
-                    except Exception:
-                        break  # Connection error, move on
-                    if attempt < retries:
-                        await asyncio.sleep(delay)  # Wait before retry
+            # Send three commands in quick succession:
+            # 1. Sensor request → PROBE_SENSORS (probe1/probe2 temps, probe1 humidity)
+            # 2. sensor_select(2) → switch to remote sensor
+            # 3. Status request → DEVICE_STATE (with remote temp when selector=2)
+            for cmd in [
+                build_sensor_request(),
+                build_sensor_select_request(2),
+                build_status_request(),
+            ]:
+                if not self._client.is_connected:
+                    break
+                await self._client.write_gatt_char(
+                    self._command_char, cmd, response=True
+                )
 
-                # Delay between sensors for device stability
-                if self._client.is_connected:
-                    await asyncio.sleep(delay)
+            # Collect notifications until we have everything or timeout.
+            # We expect up to 3 responses: PROBE_SENSORS, stale DEVICE_STATE
+            # from sensor_select, and fresh DEVICE_STATE from status request.
+            for _ in range(5):
+                if not self._client.is_connected:
+                    break
+                new_packet.clear()
+                try:
+                    await asyncio.wait_for(new_packet.wait(), timeout=timeout)
+                except TimeoutError:
+                    break  # No more notifications coming
+                has_remote = any(
+                    len(p) >= 43 and p[34] == 2 for p in state_packets
+                )
+                if probe_data and has_remote:
+                    break
 
-            # Request sensor packet for Probe 1 humidity (with retries)
-            if self._client.is_connected:
-                expected_type = PacketType.PROBE_SENSORS
-                for attempt in range(retries + 1):
-                    if not self._client.is_connected:
-                        break
-                    event.clear()
-                    current_data = None
-                    try:
-                        await self._client.write_gatt_char(
-                            self._command_char, build_sensor_request(), response=True
-                        )
-                        await asyncio.wait_for(event.wait(), timeout=timeout)
-                        if current_data and len(current_data) >= 9:
-                            probe1_humidity = current_data[8]
-                        break
-                    except TimeoutError:
-                        if attempt < retries:
-                            await asyncio.sleep(delay)
-                    except Exception:
-                        break
-
-            # Request fresh STATUS packet for updated humidity_remote
-            # (byte 5 in sensor select responses may be stale)
-            if self._client.is_connected:
+            # Retry status requests if we don't have remote temp yet
+            for _ in range(retries):
+                has_remote = any(
+                    len(p) >= 43 and p[34] == 2 for p in state_packets
+                )
+                if has_remote or not self._client.is_connected:
+                    break
                 await asyncio.sleep(delay)
-                expected_type = PacketType.DEVICE_STATE
-                for attempt in range(retries + 1):
-                    if not self._client.is_connected:
-                        break
-                    event.clear()
-                    current_data = None
-                    try:
-                        await self._client.write_gatt_char(
-                            self._command_char, build_status_request(), response=True
-                        )
-                        await asyncio.wait_for(event.wait(), timeout=timeout)
-                        if current_data and len(current_data) >= 6:
-                            last_status_data = current_data
-                        break
-                    except TimeoutError:
-                        if attempt < retries:
-                            await asyncio.sleep(delay)
-                    except Exception:
-                        break
+                new_packet.clear()
+                try:
+                    await self._client.write_gatt_char(
+                        self._command_char, build_status_request(), response=True
+                    )
+                    await asyncio.wait_for(new_packet.wait(), timeout=timeout)
+                except (TimeoutError, Exception):
+                    pass
+
         finally:
             try:
                 await self._client.stop_notify(self._status_char)
             except Exception:
-                pass  # Ignore errors if already disconnected
+                pass
 
-        if not last_status_data:
+        # Find best DEVICE_STATE packet (prefer one with selector=2)
+        status_data: bytes | None = None
+        remote_temp: int | None = None
+        for pkt in state_packets:
+            if len(pkt) >= 43:
+                if status_data is None:
+                    status_data = pkt
+                if pkt[34] == 2:
+                    status_data = pkt
+                    remote_temp = pkt[32]
+
+        if not status_data:
             raise TimeoutError("No status response received")
 
-        # Parse the last status packet for base values
-        status = parse_status(last_status_data)
+        status = parse_status(status_data)
         if not status:
             raise ValueError("Invalid status response")
 
-        # Override with fresh sensor readings
-        from dataclasses import replace
+        # Override with probe sensor readings (independent of sensor selection)
+        sensors = parse_sensors(probe_data) if probe_data else None
+        if sensors:
+            if sensors.temp_probe1 is not None:
+                status = replace(status, temp_probe1=sensors.temp_probe1)
+            if sensors.temp_probe2 is not None:
+                status = replace(status, temp_probe2=sensors.temp_probe2)
+            if sensors.humidity_probe1 is not None:
+                status = replace(status, humidity_probe1=sensors.humidity_probe1)
 
-        if 0 in fresh_temps:
-            status = replace(status, temp_probe2=fresh_temps[0])
-        if 1 in fresh_temps:
-            status = replace(status, temp_probe1=fresh_temps[1])
-        if 2 in fresh_temps:
-            status = replace(status, temp_remote=fresh_temps[2])
-        if probe1_humidity is not None:
-            status = replace(status, humidity_probe1=probe1_humidity)
+        if remote_temp is not None:
+            status = replace(status, temp_remote=remote_temp)
 
         self._last_status = status
         return status
