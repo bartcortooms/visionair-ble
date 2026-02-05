@@ -177,10 +177,11 @@ class StatusOffset:
     TYPE = 2
     DEVICE_ID = 4               # 4 bytes, little-endian
     HUMIDITY = 4                # Humidity % from remote
-    TEMP_REMOTE = 8             # Room temperature (from remote)
+    TEMP_REMOTE_CACHED = 8      # Room temperature (cached, may be stale)
     CONFIGURED_VOLUME = 22      # 2 bytes, little-endian
     OPERATING_DAYS = 26         # 2 bytes, little-endian
     FILTER_DAYS = 28            # 2 bytes, little-endian
+    TEMP_ACTIVE = 32            # Live temp for selected sensor (per SENSOR_SELECTOR)
     SENSOR_SELECTOR = 34        # Current sensor source (0/1/2)
     TEMP_PROBE1 = 35            # Outlet temp (may be stale)
     SUMMER_LIMIT_TEMP = 38
@@ -798,9 +799,23 @@ def parse_status(data: bytes) -> DeviceStatus | None:
         boost_active=data[StatusOffset.BOOST_ACTIVE] == 0x01 if len(data) > StatusOffset.BOOST_ACTIVE else False,
         sensor_selector=sensor_selector,
         sensor_name=sensor_name,
-        temp_remote=data[StatusOffset.TEMP_REMOTE] if len(data) > StatusOffset.TEMP_REMOTE else None,
-        temp_probe1=data[StatusOffset.TEMP_PROBE1] if len(data) > StatusOffset.TEMP_PROBE1 else None,
-        temp_probe2=data[StatusOffset.TEMP_PROBE2] if len(data) > StatusOffset.TEMP_PROBE2 else None,
+        # Use live temperature from byte 32 when that sensor is selected,
+        # otherwise fall back to cached values at fixed offsets
+        temp_remote=(
+            data[StatusOffset.TEMP_ACTIVE] if sensor_selector == 2 and len(data) > StatusOffset.TEMP_ACTIVE
+            else data[StatusOffset.TEMP_REMOTE_CACHED] if len(data) > StatusOffset.TEMP_REMOTE_CACHED
+            else None
+        ),
+        temp_probe1=(
+            data[StatusOffset.TEMP_ACTIVE] if sensor_selector == 1 and len(data) > StatusOffset.TEMP_ACTIVE
+            else data[StatusOffset.TEMP_PROBE1] if len(data) > StatusOffset.TEMP_PROBE1
+            else None
+        ),
+        temp_probe2=(
+            data[StatusOffset.TEMP_ACTIVE] if sensor_selector == 0 and len(data) > StatusOffset.TEMP_ACTIVE
+            else data[StatusOffset.TEMP_PROBE2] if len(data) > StatusOffset.TEMP_PROBE2
+            else None
+        ),
         humidity_remote=humidity,
         filter_days=filter_days,
         operating_days=operating_days,

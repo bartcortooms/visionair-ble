@@ -210,13 +210,14 @@ def decode_status_packet(hex_data: str) -> dict:
     return {
         'device_id': struct.unpack('<I', data[4:8])[0],
         # Known sensor fields
-        'remote_temp': data[8],           # Remote Control temperature
+        'sensor_selector': data[34],      # 0=Probe2, 1=Probe1, 2=Remote
+        'active_temp': data[32],          # Live temperature for selected sensor
+        # Use live temp (byte 32) when that sensor is selected, else cached value
+        'remote_temp': data[32] if data[34] == 2 else data[8],
         'remote_humidity_raw': data[4],   # Remote humidity (direct %)
         'remote_humidity': data[4],
-        'probe1_temp': data[35],          # Probe 1 temperature
-        'probe2_temp': data[42],          # Probe 2 temperature
-        'sensor_selector': data[34],      # 0=Probe2, 1=Probe1, 2=Remote
-        'active_temp': data[32],          # Temperature of selected sensor
+        'probe1_temp': data[32] if data[34] == 1 else data[35],
+        'probe2_temp': data[32] if data[34] == 0 else data[42],
         # Settings
         'airflow_indicator': data[47],
         'airflow_m3h': airflow_map.get(data[47], f'?{data[47]}'),

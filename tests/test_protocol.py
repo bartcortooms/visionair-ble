@@ -156,10 +156,11 @@ class TestStatusParsing:
         packet[2] = 0x01  # type
         packet[4] = 52  # humidity (direct %)
         packet[5:8] = (12345678).to_bytes(4, "little")[:3]  # device ID (partial)
-        packet[8] = 18  # remote temp
+        packet[8] = 17  # remote temp (cached, may be stale)
         packet[22:24] = (363).to_bytes(2, "little")  # configured volume
         packet[26:28] = (634).to_bytes(2, "little")  # operating days
         packet[28:30] = (331).to_bytes(2, "little")  # filter days
+        packet[32] = 18  # active temp (live value for selected sensor)
         packet[34] = 2  # sensor selector (remote)
         packet[35] = 16  # probe 1 temp
         packet[38] = 26  # summer limit temp
