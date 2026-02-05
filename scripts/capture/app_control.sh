@@ -567,9 +567,14 @@ pull_btsnoop() {
 
 # Sensor data collection for protocol verification
 # Tracks last checkpoint time and collects all sensor readings
+# Data is stored in project data/ directory for persistence (NOT /tmp)
 
-LAST_CHECKPOINT_FILE="/tmp/vmi_btlogs/last_sensor_checkpoint.txt"
+CAPTURE_DATA_DIR="$PROJECT_ROOT/data/captures"
+LAST_CHECKPOINT_FILE="$CAPTURE_DATA_DIR/last_sensor_checkpoint.txt"
 CHECKPOINT_INTERVAL_MINUTES=15
+
+# Ensure capture data directory exists
+mkdir -p "$CAPTURE_DATA_DIR"
 
 # Check if it's time to collect sensor data (15+ minutes since last)
 should_collect_sensors() {
@@ -603,10 +608,9 @@ collect_sensors() {
     fi
 
     echo "=== Collecting Sensor Data for Protocol Verification ===" >&2
-    mkdir -p /tmp/vmi_btlogs
 
     local ts=$(date +%Y%m%d_%H%M%S)
-    local screenshot_file="/tmp/vmi_btlogs/sensors_${ts}.png"
+    local screenshot_file="$CAPTURE_DATA_DIR/sensors_${ts}.png"
 
     # Navigate to measurements screen and capture
     echo "Navigating to Instantaneous Measurements..." >&2
@@ -619,10 +623,10 @@ collect_sensors() {
 
     # Pull btsnoop logs
     echo "Pulling btsnoop logs..." >&2
-    adb_cmd bugreport "/tmp/vmi_btlogs/bugreport_sensors_${ts}.zip" 2>/dev/null
-    unzip -jo "/tmp/vmi_btlogs/bugreport_sensors_${ts}.zip" "*/btsnoop_hci.log" -d /tmp/vmi_btlogs/ 2>/dev/null || true
-    local btsnoop_file="/tmp/vmi_btlogs/btsnoop_sensors_${ts}.log"
-    mv /tmp/vmi_btlogs/btsnoop_hci.log "$btsnoop_file" 2>/dev/null || true
+    adb_cmd bugreport "$CAPTURE_DATA_DIR/bugreport_sensors_${ts}.zip" 2>/dev/null
+    unzip -jo "$CAPTURE_DATA_DIR/bugreport_sensors_${ts}.zip" "*/btsnoop_hci.log" -d "$CAPTURE_DATA_DIR/" 2>/dev/null || true
+    local btsnoop_file="$CAPTURE_DATA_DIR/btsnoop_sensors_${ts}.log"
+    mv "$CAPTURE_DATA_DIR/btsnoop_hci.log" "$btsnoop_file" 2>/dev/null || true
 
     # Extract packet byte values
     if [[ -f "$btsnoop_file" ]]; then

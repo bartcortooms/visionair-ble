@@ -291,7 +291,7 @@ After running, read the screenshot and compare app values to packet bytes. If th
 | Probe 1 humidity | Probe N°1 → Humidity | HISTORY byte 8 |
 | Probe 2 temp | Probe N°2 → Temperature | HISTORY byte 11 |
 
-Last checkpoint file: `/tmp/vmi_btlogs/last_sensor_checkpoint.txt`
+Data is stored persistently in `data/captures/` (gitignored, survives reboots).
 
 ### Common Investigation Patterns
 

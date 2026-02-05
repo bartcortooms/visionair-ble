@@ -40,3 +40,6 @@ uv.lock
 
 # BLE captures (may contain device-specific data)
 captures/
+
+# Capture data (persistent but not committed)
+data/captures/
