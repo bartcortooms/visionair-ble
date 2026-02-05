@@ -263,6 +263,27 @@ When helping with reverse engineering:
 5. **Navigation:** Follow screen hierarchy - can't jump directly to submenus
 6. **Verify results:** Check screenshots in session directory
 
+### Opportunistic Data Collection
+
+**When connecting to the VMI device for any task**, check if 15+ minutes have passed since the last sensor checkpoint. If so, collect a data point for protocol verification:
+
+1. Navigate to Instantaneous Measurements screen
+2. Record all sensor values (temps + humidity for all probes)
+3. Pull btsnoop logs and compare packet bytes to app values
+4. Add results to GitHub issue #9 tracking table
+
+This builds historical data to verify protocol byte offsets are correct. Data to record:
+
+| Field | App Screen | Packet Location |
+|-------|------------|-----------------|
+| Remote temp | Remote Control → Temperature | STATUS byte 8 |
+| Remote humidity | Remote Control → Humidity | STATUS byte 4 |
+| Probe 1 temp | Probe N°1 → Temperature | HISTORY byte 6 |
+| Probe 1 humidity | Probe N°1 → Humidity | HISTORY byte 8 |
+| Probe 2 temp | Probe N°2 → Temperature | HISTORY byte 11 |
+
+Last checkpoint file: `/tmp/vmi_btlogs/last_checkpoint.txt` (contains timestamp)
+
 ### Common Investigation Patterns
 
 **To verify a byte offset:**
