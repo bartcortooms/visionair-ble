@@ -11,11 +11,11 @@ This document tracks which protocol features from [protocol.md](protocol.md) are
 | Sensor Cycle Request (0x10, param 0x18) | Yes | Yes | `build_sensor_cycle_request()` |
 | BOOST ON/OFF (0x10, param 0x19) | Yes | Yes | `build_boost_command()` |
 | Settings (0x1a) - airflow/preheat/summer | Yes | Yes | `build_settings_packet()` |
-| Holiday Days Query (0x10, param 0x1a) | Yes | Yes | `build_holiday_days_query()` |
-| Holiday Activate (0x1a, byte7=0x04) | Yes | Yes | `build_holiday_activate()` |
+| Holiday Days Query (0x10, param 0x1a) | Partial | Experimental | `build_holiday_days_query()` |
+| Holiday Activate (0x1a, byte7=0x04) | Partial | Experimental | `build_holiday_activate()` |
 | Holiday Status Query (0x10, param 0x2c) | Yes | Yes | `build_holiday_status_query()` |
-| Night Ventilation (0x1a, byte7=0x04) | Yes | Yes | `build_night_ventilation_activate()` |
-| Fixed Air Flow (0x1a, byte7=0x04) | Yes | Yes | `build_fixed_airflow_activate()` |
+| Night Ventilation (0x1a, byte7=0x04) | Partial | Experimental | `build_night_ventilation_activate()` |
+| Fixed Air Flow (0x1a, byte7=0x04) | Partial | Experimental | `build_fixed_airflow_activate()` |
 | Schedule Config (0x46, 0x47) | Yes | No | — |
 | Schedule Command (0x1a, byte7=0x05) | Partial | No | — |
 
@@ -48,6 +48,19 @@ Features that are fully documented and ready for implementation:
 
 1. **Schedule Config** — Time slot read/write for automated ventilation profiles
 2. **Holiday Status (0x50)** — Parse response from `build_holiday_status_query()`
+
+## Experimental Features
+
+Features marked "Experimental" require `_experimental=True` flag to use. They have known gaps in protocol understanding:
+
+- **Holiday Mode** — Activation sequence captured, but:
+  - No deactivation packets captured (how to cancel Holiday mode?)
+  - Unclear if the days query is sufficient or if other state is needed
+
+- **Night Ventilation / Fixed Air Flow** — Packet structure appears identical to Holiday mode:
+  - We don't know how the device distinguishes between these three modes
+  - May require different preceding queries or internal state
+  - No deactivation packets captured
 
 ## Needs Verification
 

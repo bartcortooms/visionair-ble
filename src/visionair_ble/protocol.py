@@ -342,27 +342,57 @@ def build_boost_command(enable: bool) -> bytes:
 # Special Modes (Holiday, Night Ventilation, Fixed Air Flow)
 # =============================================================================
 #
-# All special modes use Settings command with byte 7 = 0x04.
-# Bytes 8-9-10 encode HH:MM:SS timestamp of activation time.
+# ⚠️  EXPERIMENTAL - Protocol understanding is incomplete!
 #
-# The device distinguishes modes based on preceding query packets:
-# - Holiday: Query 0x1a sets days, then Settings 0x04 activates
-# - Night Ventilation: Direct Settings 0x04 activation
-# - Fixed Air Flow: Direct Settings 0x04 activation
+# What we know:
+# - All special modes use Settings command with byte 7 = 0x04
+# - Bytes 8-9-10 encode HH:MM:SS timestamp
+# - Holiday mode: days are set via query 0x1a before activation
+#
+# What we DON'T know:
+# - How the device distinguishes Holiday vs Night Vent vs Fixed Air Flow
+# - How to deactivate special modes (no OFF packets captured)
+# - Whether Night Vent and Fixed Air Flow require different preceding queries
+#
+# These functions require _experimental=True flag to acknowledge the risks.
 
 
-def build_holiday_days_query(days: int) -> bytes:
+class ExperimentalFeatureError(Exception):
+    """Raised when experimental features are used without explicit opt-in."""
+
+    pass
+
+
+def _require_experimental(flag: bool, feature: str) -> None:
+    """Raise if experimental flag is not set."""
+    if not flag:
+        raise ExperimentalFeatureError(
+            f"{feature} is experimental and may not work correctly. "
+            f"Pass _experimental=True to acknowledge the risks. "
+            f"See docs/protocol.md for details on what is unknown."
+        )
+
+
+def build_holiday_days_query(days: int, *, _experimental: bool = False) -> bytes:
     """Build query to set Holiday mode duration.
+
+    ⚠️  EXPERIMENTAL: Holiday mode activation sequence is not fully verified.
+    We don't know how to deactivate Holiday mode once activated.
 
     This should be sent before build_holiday_activate() to set
     the number of days the device will run in Holiday mode.
 
     Args:
         days: Number of days (typically 1-30)
+        _experimental: Must be True to use this function
 
     Returns:
         Complete packet bytes
+
+    Raises:
+        ExperimentalFeatureError: If _experimental is not True
     """
+    _require_experimental(_experimental, "Holiday mode")
     payload = bytes([0x10, 0x06, 0x05, 0x1A, 0x00, 0x00, 0x00, days])
     checksum = calc_checksum(payload)
     return MAGIC + payload + bytes([checksum])
@@ -372,6 +402,7 @@ def build_holiday_status_query() -> bytes:
     """Build query to get Holiday mode status.
 
     Returns type 0x50 response with current Holiday mode state.
+    Note: Parsing of the 0x50 response is not yet implemented.
 
     Returns:
         Complete packet bytes
@@ -379,15 +410,12 @@ def build_holiday_status_query() -> bytes:
     return bytes.fromhex("a5b61006052c000000003f")
 
 
-def build_special_mode_command(preheat_enabled: bool = True) -> bytes:
-    """Build a special mode activation command.
+def _build_special_mode_command(preheat_enabled: bool = True) -> bytes:
+    """Build a special mode activation command (internal use).
 
-    Used for Holiday, Night Ventilation, and Fixed Air Flow modes.
-    The specific mode is determined by preceding query packets:
-    - For Holiday: send build_holiday_days_query() first
-    - For Night Vent / Fixed Air Flow: send directly
-
-    The command includes the current time as HH:MM:SS timestamp.
+    This is the shared packet structure for Holiday, Night Ventilation,
+    and Fixed Air Flow modes. The command includes the current time
+    as HH:MM:SS timestamp in bytes 8-9-10.
 
     Args:
         preheat_enabled: Whether to enable preheat during the mode
@@ -411,8 +439,12 @@ def build_special_mode_command(preheat_enabled: bool = True) -> bytes:
     return MAGIC + payload + bytes([checksum])
 
 
-def build_holiday_activate(days: int, preheat_enabled: bool = True) -> list[bytes]:
+def build_holiday_activate(
+    days: int, preheat_enabled: bool = True, *, _experimental: bool = False
+) -> list[bytes]:
     """Build complete Holiday mode activation sequence.
+
+    ⚠️  EXPERIMENTAL: We don't know how to deactivate Holiday mode once activated.
 
     Returns a list of packets that should be sent in order:
     1. Days query to set duration
@@ -421,42 +453,65 @@ def build_holiday_activate(days: int, preheat_enabled: bool = True) -> list[byte
     Args:
         days: Number of days for Holiday mode (typically 1-30)
         preheat_enabled: Whether to enable preheat during Holiday
+        _experimental: Must be True to use this function
 
     Returns:
         List of packet bytes to send in sequence
+
+    Raises:
+        ExperimentalFeatureError: If _experimental is not True
     """
+    _require_experimental(_experimental, "Holiday mode")
     return [
-        build_holiday_days_query(days),
-        build_special_mode_command(preheat_enabled),
+        build_holiday_days_query(days, _experimental=True),
+        _build_special_mode_command(preheat_enabled),
     ]
 
 
-def build_night_ventilation_activate(preheat_enabled: bool = True) -> bytes:
+def build_night_ventilation_activate(
+    preheat_enabled: bool = True, *, _experimental: bool = False
+) -> bytes:
     """Build Night Ventilation mode activation command.
 
-    Night Ventilation provides increased ventilation overnight.
+    ⚠️  EXPERIMENTAL: We don't know how the device distinguishes this from
+    Holiday mode or Fixed Air Flow. The packet structure appears identical.
+    We also don't know how to deactivate this mode.
 
     Args:
         preheat_enabled: Whether to enable preheat during the mode
+        _experimental: Must be True to use this function
 
     Returns:
         Complete packet bytes
+
+    Raises:
+        ExperimentalFeatureError: If _experimental is not True
     """
-    return build_special_mode_command(preheat_enabled)
+    _require_experimental(_experimental, "Night Ventilation mode")
+    return _build_special_mode_command(preheat_enabled)
 
 
-def build_fixed_airflow_activate(preheat_enabled: bool = True) -> bytes:
+def build_fixed_airflow_activate(
+    preheat_enabled: bool = True, *, _experimental: bool = False
+) -> bytes:
     """Build Fixed Air Flow mode activation command.
 
-    Fixed Air Flow maintains a constant ventilation rate.
+    ⚠️  EXPERIMENTAL: We don't know how the device distinguishes this from
+    Holiday mode or Night Ventilation. The packet structure appears identical.
+    We also don't know how to deactivate this mode.
 
     Args:
         preheat_enabled: Whether to enable preheat during the mode
+        _experimental: Must be True to use this function
 
     Returns:
         Complete packet bytes
+
+    Raises:
+        ExperimentalFeatureError: If _experimental is not True
     """
-    return build_special_mode_command(preheat_enabled)
+    _require_experimental(_experimental, "Fixed Air Flow mode")
+    return _build_special_mode_command(preheat_enabled)
 
 
 def build_settings_packet(

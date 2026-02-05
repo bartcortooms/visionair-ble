@@ -146,11 +146,24 @@ These byte values are internal device references (likely fan PWM or calibration 
 
 ### 4.3 Special Modes
 
+> **⚠️ EXPERIMENTAL:** These features have significant gaps in protocol understanding.
+> See [Open Questions](#open-questions) for details. Use with caution.
+
 All special modes use the Settings Command with byte 7 = `0x04`. Bytes 8-9-10 encode an HH:MM:SS timestamp.
 
 #### Holiday Mode
 
-**Activation sequence:**
+**What we know:**
+- Activation sequence involves days query followed by Settings 0x04 command
+- Days query sets the duration
+- Activation command includes current time as HH:MM:SS
+
+**What we DON'T know:**
+- How to deactivate/cancel Holiday mode (no OFF packets captured)
+- Whether the days value persists or needs to be sent every time
+- How the device reports remaining Holiday time
+
+**Activation sequence (observed):**
 
 1. **Set days** — Query 0x1a with days value:
    ```
@@ -175,17 +188,28 @@ All special modes use the Settings Command with byte 7 = `0x04`. Bytes 8-9-10 en
 a5b6 10 06 05 2c 00 00 00 00 3f
 ```
 
-Returns type 0x50 response.
+Returns type 0x50 response (structure not yet decoded).
 
 #### Night Ventilation Boost
 
-Uses the same packet structure as Holiday mode (byte 7 = `0x04`, bytes 8-9-10 = HH:MM:SS).
+**What we know:**
+- Uses the same packet structure as Holiday mode (byte 7 = `0x04`, bytes 8-9-10 = HH:MM:SS)
+
+**What we DON'T know:**
+- How the device distinguishes this from Holiday mode — packets appear identical
+- Whether a preceding query is required to select this mode
+- How to deactivate it
 
 #### Fixed Air Flow Rate
 
-Uses the same packet structure as Holiday mode (byte 7 = `0x04`, bytes 8-9-10 = HH:MM:SS).
+**What we know:**
+- Uses the same packet structure as Holiday mode (byte 7 = `0x04`, bytes 8-9-10 = HH:MM:SS)
 
-> **Note:** How the device distinguishes between Holiday, Night Ventilation, and Fixed Air Flow modes is not fully understood. The differentiation may come from the preceding query packets or internal device state.
+**What we DON'T know:**
+- How the device distinguishes this from Holiday mode — packets appear identical
+- Whether a preceding query is required to select this mode
+- How to deactivate it
+- What airflow rate it uses (the current mode? a specific rate?)
 
 ### 4.4 Schedule Commands
 
