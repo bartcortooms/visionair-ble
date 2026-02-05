@@ -180,7 +180,7 @@ class VisionAirClient:
     async def get_fresh_status(
         self,
         timeout: float = 3.0,
-        retries: int = 1,
+        retries: int = 2,
         delay: float = 0.5,
     ) -> DeviceStatus:
         """Get device status with fresh sensor readings.
@@ -229,6 +229,9 @@ class VisionAirClient:
             # Sensor 0 = Probe2 (inlet), 1 = Probe1 (outlet), 2 = Remote
             for sensor in (0, 1, 2):
                 # Retry loop for reliability
+                # The device may respond with the previous sensor's data before
+                # switching, especially for the Remote sensor (RF delay).
+                # We verify the response matches the requested sensor.
                 for attempt in range(retries + 1):
                     if not self._client.is_connected:
                         break  # Don't retry if disconnected
@@ -239,17 +242,20 @@ class VisionAirClient:
                             self._command_char, build_sensor_select_request(sensor), response=True
                         )
                         await asyncio.wait_for(event.wait(), timeout=timeout)
-                        # Success - extract data and break retry loop
+                        # Verify response matches requested sensor
                         if current_data and len(current_data) >= 43:
                             selector = current_data[34]
-                            fresh_temps[selector] = current_data[32]
-                            last_status_data = current_data
-                        break
+                            if selector == sensor:
+                                fresh_temps[selector] = current_data[32]
+                                last_status_data = current_data
+                                break  # Got correct sensor data
+                            # Wrong selector - device hasn't switched yet
                     except TimeoutError:
-                        if attempt < retries:
-                            await asyncio.sleep(delay)  # Wait before retry
+                        pass  # Will retry if attempts remain
                     except Exception:
                         break  # Connection error, move on
+                    if attempt < retries:
+                        await asyncio.sleep(delay)  # Wait before retry
 
                 # Delay between sensors for device stability
                 if self._client.is_connected:
