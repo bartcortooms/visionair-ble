@@ -616,6 +616,62 @@ a5b61006051b0000000109  - Query 0x1b (possibly fixed airflow specific)
 - How to turn modes OFF (toggle OFF may use different packet or just query)
 - What differentiates Holiday vs Night Vent vs Fixed Air Flow in the packet?
 
+## Implementation Status
+
+This section tracks which protocol features are documented vs implemented in the library (`visionair_ble/protocol.py`).
+
+### Commands (Write Operations)
+
+| Feature | Documented | Implemented | Notes |
+|---------|------------|-------------|-------|
+| Status Request (0x10, param 0x03) | ✅ | ✅ `build_status_request()` | |
+| Sensor Request (0x10, param 0x07) | ✅ | ✅ `build_sensor_request()` | |
+| Sensor Cycle Request (0x10, param 0x18) | ✅ | ✅ `build_sensor_cycle_request()` | |
+| BOOST ON/OFF (0x10, param 0x19) | ✅ | ✅ `build_boost_command()` | |
+| Settings (0x1a) - airflow/preheat/summer | ✅ | ✅ `build_settings_packet()` | |
+| Holiday Days Query (0x10, param 0x1a) | ✅ | ❌ | Example code in docs |
+| Holiday Activate (0x1a, byte7=0x04) | ✅ | ❌ | Example code in docs |
+| Holiday Status Query (0x10, param 0x2c) | ✅ | ❌ | |
+| Night Ventilation (0x1a, byte7=0x04) | ✅ | ❌ | Same structure as Holiday |
+| Fixed Air Flow (0x1a, byte7=0x04) | ✅ | ❌ | Same structure as Holiday |
+| Schedule Config (0x46, 0x47) | ✅ | ❌ | Time slot read/write |
+| Schedule Command (0x1a, byte7=0x05) | ⚠️ Partial | ❌ | Needs more research |
+
+### Responses (Notification Parsing)
+
+| Feature | Documented | Implemented | Notes |
+|---------|------------|-------------|-------|
+| Status (0x01) - core fields | ✅ | ✅ `parse_status()` | |
+| Status - diagnostic bitfield (byte 54) | ✅ | ❌ | Field documented, not exposed |
+| Status - bypass state | ⚠️ Partial | ❌ | Weather dependent |
+| Sensor/History (0x03) | ✅ | ✅ `parse_sensors()` | |
+| Schedule (0x02) - current time | ✅ | ❌ | Reports device time |
+| Schedule Config (0x46) | ✅ | ❌ | Time slot data |
+| Settings Ack (0x23) | ⚠️ Mentioned | ❌ | |
+| Holiday Status (0x50) | ⚠️ Mentioned | ❌ | Response to query 0x2c |
+
+### Data Structures
+
+| Feature | Documented | Implemented | Notes |
+|---------|------------|-------------|-------|
+| `DeviceStatus` dataclass | ✅ | ✅ | Core status fields |
+| `SensorData` dataclass | ✅ | ✅ | Live sensor readings |
+| Airflow mode mapping | ✅ | ✅ | LOW/MEDIUM/HIGH |
+| Volume-based calculation | ✅ | ✅ | ACH multipliers |
+| Sensor metadata for HA | ✅ | ✅ | Auto-discovery support |
+
+### Legend
+
+- ✅ Fully documented/implemented
+- ⚠️ Partially documented/implemented
+- ❌ Not implemented (or not documented)
+
+### Priority Implementation Candidates
+
+1. **Holiday Mode** - Fully documented with example code, useful for vacation periods
+2. **Schedule Config** - Time slot read/write for automated ventilation profiles
+3. **Diagnostic bitfield** - Simple addition to expose byte 54 in status parsing
+
 ## References
 
 - [Infineon AN91162 - Creating a BLE Custom Profile](https://www.infineon.com/dgdl/Infineon-AN91162_Creating_a_BLE_Custom_Profile-ApplicationNotes-v05_00-EN.pdf)
