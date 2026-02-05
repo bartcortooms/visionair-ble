@@ -132,7 +132,7 @@ RUN_030_press_boost
   - `0x1a`: Settings (12 bytes)
   - `0x23`: Acknowledgment
 
-See [PROTOCOL_SPEC.md](PROTOCOL_SPEC.md) for full protocol documentation.
+See [protocol.md](../protocol.md) for full protocol documentation.
 
 ---
 
