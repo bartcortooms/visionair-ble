@@ -565,6 +565,111 @@ pull_btsnoop() {
     fi
 }
 
+# Sensor data collection for protocol verification
+# Tracks last checkpoint time and collects all sensor readings
+
+LAST_CHECKPOINT_FILE="/tmp/vmi_btlogs/last_sensor_checkpoint.txt"
+CHECKPOINT_INTERVAL_MINUTES=15
+
+# Check if it's time to collect sensor data (15+ minutes since last)
+should_collect_sensors() {
+    if [[ ! -f "$LAST_CHECKPOINT_FILE" ]]; then
+        return 0  # No previous checkpoint, should collect
+    fi
+
+    local last_ts=$(cat "$LAST_CHECKPOINT_FILE" 2>/dev/null)
+    local now_ts=$(date +%s)
+    local diff_minutes=$(( (now_ts - last_ts) / 60 ))
+
+    if [[ $diff_minutes -ge $CHECKPOINT_INTERVAL_MINUTES ]]; then
+        return 0  # Should collect
+    else
+        echo "Last sensor checkpoint was $diff_minutes minutes ago (threshold: $CHECKPOINT_INTERVAL_MINUTES min)" >&2
+        return 1  # Too recent
+    fi
+}
+
+# Collect all sensor readings and compare to packet bytes
+# Usage: collect-sensors [--force]
+collect_sensors() {
+    local force=0
+    if [[ "$1" == "--force" ]]; then
+        force=1
+    fi
+
+    if [[ $force -eq 0 ]] && ! should_collect_sensors; then
+        echo "Skipping sensor collection (use --force to override)"
+        return 0
+    fi
+
+    echo "=== Collecting Sensor Data for Protocol Verification ===" >&2
+    mkdir -p /tmp/vmi_btlogs
+
+    local ts=$(date +%Y%m%d_%H%M%S)
+    local screenshot_file="/tmp/vmi_btlogs/sensors_${ts}.png"
+
+    # Navigate to measurements screen and capture
+    echo "Navigating to Instantaneous Measurements..." >&2
+    goto_measurements_full >/dev/null 2>&1
+    goto_measurements >/dev/null 2>&1
+
+    # Take screenshot
+    adb_cmd exec-out screencap -p > "$screenshot_file"
+    echo "Screenshot: $screenshot_file" >&2
+
+    # Pull btsnoop logs
+    echo "Pulling btsnoop logs..." >&2
+    adb_cmd bugreport "/tmp/vmi_btlogs/bugreport_sensors_${ts}.zip" 2>/dev/null
+    unzip -jo "/tmp/vmi_btlogs/bugreport_sensors_${ts}.zip" "*/btsnoop_hci.log" -d /tmp/vmi_btlogs/ 2>/dev/null || true
+    local btsnoop_file="/tmp/vmi_btlogs/btsnoop_sensors_${ts}.log"
+    mv /tmp/vmi_btlogs/btsnoop_hci.log "$btsnoop_file" 2>/dev/null || true
+
+    # Extract packet byte values
+    if [[ -f "$btsnoop_file" ]]; then
+        echo "" >&2
+        echo "=== Packet Byte Values ===" >&2
+        python3 - "$btsnoop_file" << 'PYTHON' 2>/dev/null
+import sys
+import subprocess
+import json
+
+btsnoop = sys.argv[1]
+result = subprocess.run(['python3', 'scripts/capture/extract_packets.py', btsnoop, '--json'],
+    capture_output=True, text=True, cwd='/home/bart/repos/visionair-ble')
+packets = json.loads(result.stdout)
+
+# Get latest STATUS packet
+status_pkts = [p for p in packets['raw_packets'] if p['type'] == 0x01]
+if status_pkts:
+    data = bytes.fromhex(status_pkts[-1]['hex'])
+    print(f"STATUS packet:")
+    print(f"  Byte 4 (Remote humidity): {data[4]}%")
+    print(f"  Byte 8 (Remote temp): {data[8]}°C")
+
+# Get latest HISTORY packet
+history_pkts = [p for p in packets['raw_packets'] if p['type'] == 0x03]
+if history_pkts:
+    data = bytes.fromhex(history_pkts[-1]['hex'])
+    print(f"HISTORY packet:")
+    print(f"  Byte 6 (Probe 1 temp): {data[6]}°C")
+    print(f"  Byte 8 (Probe 1 humidity): {data[8]}%")
+    print(f"  Byte 11 (Probe 2 temp): {data[11]}°C")
+PYTHON
+    fi
+
+    # Update last checkpoint timestamp
+    date +%s > "$LAST_CHECKPOINT_FILE"
+
+    echo "" >&2
+    echo "=== Action Required ===" >&2
+    echo "1. Read screenshot: $screenshot_file" >&2
+    echo "2. Compare app values to packet bytes above" >&2
+    echo "3. Add data point to GitHub issue #9 if values differ" >&2
+
+    # Output the screenshot path for the agent
+    echo "$screenshot_file"
+}
+
 # Non-interactive capture session commands
 # For use by CLI tools and coding agents
 
@@ -691,6 +796,8 @@ case "${1:-help}" in
     session-start) session_start "$2" ;;
     session-checkpoint) session_checkpoint "$2" ;;
     session-end) session_end "$2" ;;
+    collect-sensors) collect_sensors "$2" ;;
+    should-collect) should_collect_sensors && echo "Yes, should collect" || echo "No, too recent" ;;
     connect)    full_connect_sequence ;;
     fan-min)    tap_fan_min ;;
     fan-mid)    tap_fan_mid ;;
@@ -770,5 +877,12 @@ case "${1:-help}" in
         echo ""
         echo "  Workflow: start -> navigate/checkpoint -> read screenshot -> write values -> end"
         echo "  Values should be appended to <dir>/checkpoints.txt after each checkpoint"
+        echo ""
+        echo "Sensor data collection (for protocol verification):"
+        echo "  collect-sensors [--force] - Collect all sensor readings if 15+ min since last"
+        echo "  should-collect  - Check if it's time to collect (15+ min since last)"
+        echo ""
+        echo "  NOTE: Run 'collect-sensors' at the start of debugging sessions to build"
+        echo "  historical data for verifying protocol byte offsets (see GitHub issue #9)"
         ;;
 esac

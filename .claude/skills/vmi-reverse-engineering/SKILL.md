@@ -136,6 +136,8 @@ VMI_ADB_TARGET=192.168.1.100:5555 ./scripts/capture/app_control.sh connect
 | `session-start <name>` | Start capture session, outputs directory path |
 | `session-checkpoint <dir>` | Take timestamped screenshot, outputs image path |
 | `session-end <dir>` | End session, pull btsnoop logs |
+| `collect-sensors` | Collect all sensor readings (if 15+ min since last) |
+| `should-collect` | Check if sensor collection is due |
 
 ## Capture Session Workflow
 
@@ -265,14 +267,21 @@ When helping with reverse engineering:
 
 ### Opportunistic Data Collection
 
-**When connecting to the VMI device for any task**, check if 15+ minutes have passed since the last sensor checkpoint. If so, collect a data point for protocol verification:
+**At the start of any VMI debugging session**, run the sensor collection command:
 
-1. Navigate to Instantaneous Measurements screen
-2. Record all sensor values (temps + humidity for all probes)
-3. Pull btsnoop logs and compare packet bytes to app values
-4. Add results to GitHub issue #9 tracking table
+```bash
+./scripts/capture/app_control.sh collect-sensors
+```
 
-This builds historical data to verify protocol byte offsets are correct. Data to record:
+This command:
+1. Checks if 15+ minutes have passed since last collection (skip if too recent)
+2. Navigates to Instantaneous Measurements screen
+3. Takes a screenshot and pulls btsnoop logs
+4. Extracts packet byte values and displays them for comparison
+
+Use `--force` to collect even if less than 15 minutes have passed.
+
+After running, read the screenshot and compare app values to packet bytes. If they differ, add a data point to GitHub issue #9.
 
 | Field | App Screen | Packet Location |
 |-------|------------|-----------------|
@@ -282,7 +291,7 @@ This builds historical data to verify protocol byte offsets are correct. Data to
 | Probe 1 humidity | Probe N°1 → Humidity | HISTORY byte 8 |
 | Probe 2 temp | Probe N°2 → Temperature | HISTORY byte 11 |
 
-Last checkpoint file: `/tmp/vmi_btlogs/last_checkpoint.txt` (contains timestamp)
+Last checkpoint file: `/tmp/vmi_btlogs/last_sensor_checkpoint.txt`
 
 ### Common Investigation Patterns
 
