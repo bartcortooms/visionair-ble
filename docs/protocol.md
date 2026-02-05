@@ -112,6 +112,22 @@ To get fresh readings for all sensors, send all three requests in sequence.
 > **Verified (2026-02-05):** Re-analyzed captures confirming byte7 selects
 > the sensor explicitly. The app sends requests in order 0→2→1 to refresh all sensors.
 
+#### Full Data Request (type 0x10, param 0x06)
+
+```
+a5b6 10 06 05 06 00 00 00 00 15
+```
+
+This "get all data" request triggers the device to send a sequence of responses:
+1. SETTINGS_ACK (type 0x23)
+2. STATUS (type 0x01)
+3. SCHEDULE (type 0x02)
+4. SENSOR/HISTORY (type 0x03)
+
+> **Discovered (2026-02-05):** Btsnoop analysis shows the VMI app uses this
+> request heavily for polling. It's more efficient than separate STATUS and
+> HISTORY requests since it gets all data in one request sequence.
+
 ### 4.2 Device Control
 
 #### BOOST Command (type 0x10, param 0x19)

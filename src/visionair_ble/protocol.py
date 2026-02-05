@@ -136,6 +136,7 @@ class RequestParam:
     """Request parameters (byte 5 in 0x10 request packets)."""
 
     STATUS = 0x03               # Request status
+    FULL_DATA = 0x06            # Request all data (STATUS + SCHEDULE + HISTORY)
     HISTORY = 0x07              # Request sensor history
     SENSOR_SELECT = 0x18        # Set sensor cycle
     BOOST = 0x19                # Activate BOOST
@@ -447,6 +448,23 @@ def build_sensor_request() -> bytes:
         Complete packet bytes: a5b6100605070000000014
     """
     return build_request(RequestParam.HISTORY, extended=True)
+
+
+def build_full_data_request() -> bytes:
+    """Build a full data request packet.
+
+    This triggers the device to send a sequence of responses:
+    - SETTINGS_ACK (0x23)
+    - STATUS (0x01)
+    - SCHEDULE (0x02)
+    - SENSOR/HISTORY (0x03)
+
+    This is the request pattern used by the VMI app for polling.
+
+    Returns:
+        Complete packet bytes: a5b6100605060000000015
+    """
+    return build_request(RequestParam.FULL_DATA, extended=True)
 
 
 def build_sensor_select_request(sensor: int) -> bytes:

@@ -56,6 +56,7 @@ from .protocol import (
     SensorData,
     # Functions
     build_boost_command,
+    build_full_data_request,
     build_sensor_request,
     build_sensor_select_request,
     build_settings_packet,
@@ -86,6 +87,7 @@ __all__ = [
     "VISIONAIR_MAC_PREFIX",
     # Protocol functions (for advanced use)
     "build_boost_command",
+    "build_full_data_request",
     "build_sensor_request",
     "build_sensor_select_request",
     "build_settings_packet",
