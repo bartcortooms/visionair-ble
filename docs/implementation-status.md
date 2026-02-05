@@ -1,0 +1,51 @@
+# Implementation Status
+
+This document tracks which protocol features from [protocol.md](protocol.md) are implemented in the library (`visionair_ble/protocol.py`).
+
+## Commands (Write Operations)
+
+| Feature | Documented | Implemented | Function |
+|---------|------------|-------------|----------|
+| Status Request (0x10, param 0x03) | Yes | Yes | `build_status_request()` |
+| Sensor Request (0x10, param 0x07) | Yes | Yes | `build_sensor_request()` |
+| Sensor Cycle Request (0x10, param 0x18) | Yes | Yes | `build_sensor_cycle_request()` |
+| BOOST ON/OFF (0x10, param 0x19) | Yes | Yes | `build_boost_command()` |
+| Settings (0x1a) - airflow/preheat/summer | Yes | Yes | `build_settings_packet()` |
+| Holiday Days Query (0x10, param 0x1a) | Yes | No | — |
+| Holiday Activate (0x1a, byte7=0x04) | Yes | No | — |
+| Holiday Status Query (0x10, param 0x2c) | Yes | No | — |
+| Night Ventilation (0x1a, byte7=0x04) | Yes | No | — |
+| Fixed Air Flow (0x1a, byte7=0x04) | Yes | No | — |
+| Schedule Config (0x46, 0x47) | Yes | No | — |
+| Schedule Command (0x1a, byte7=0x05) | Partial | No | — |
+
+## Responses (Notification Parsing)
+
+| Feature | Documented | Implemented | Function |
+|---------|------------|-------------|----------|
+| Status (0x01) - core fields | Yes | Yes | `parse_status()` |
+| Status - diagnostic bitfield (byte 54) | Yes | No | — |
+| Status - bypass state | Partial | No | — |
+| Sensor/History (0x03) | Yes | Yes | `parse_sensors()` |
+| Schedule (0x02) - current time | Yes | No | — |
+| Schedule Config (0x46) | Yes | No | — |
+| Settings Ack (0x23) | Partial | No | — |
+| Holiday Status (0x50) | Partial | No | — |
+
+## Data Structures
+
+| Feature | Documented | Implemented | Notes |
+|---------|------------|-------------|-------|
+| `DeviceStatus` dataclass | Yes | Yes | Core status fields |
+| `SensorData` dataclass | Yes | Yes | Live sensor readings |
+| Airflow mode mapping | Yes | Yes | LOW/MEDIUM/HIGH |
+| Volume-based calculation | Yes | Yes | ACH multipliers |
+| Sensor metadata for HA | Yes | Yes | Auto-discovery support |
+
+## Priority Candidates
+
+Features that are fully documented and ready for implementation:
+
+1. **Holiday Mode** — Useful for vacation periods, protocol fully decoded
+2. **Schedule Config** — Time slot read/write for automated ventilation profiles
+3. **Diagnostic bitfield** — Simple addition to expose byte 54 in status parsing
