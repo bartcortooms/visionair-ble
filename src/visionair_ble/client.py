@@ -177,7 +177,12 @@ class VisionAirClient:
 
         return sensors
 
-    async def get_fresh_status(self, timeout: float = 10.0) -> DeviceStatus:
+    async def get_fresh_status(
+        self,
+        timeout: float = 3.0,
+        retries: int = 1,
+        delay: float = 0.5,
+    ) -> DeviceStatus:
         """Get device status with fresh sensor readings.
 
         This method explicitly requests readings from each sensor (Probe2,
@@ -191,13 +196,15 @@ class VisionAirClient:
         - Probe 2: No humidity sensor
 
         Args:
-            timeout: How long to wait for each response in seconds
+            timeout: How long to wait for each response in seconds (default 3.0)
+            retries: Number of retry attempts per sensor (default 1)
+            delay: Delay between requests in seconds (default 0.5)
 
         Returns:
             DeviceStatus with fresh temperature and humidity readings
 
         Raises:
-            TimeoutError: If no response within timeout
+            TimeoutError: If no status responses received at all
         """
         self._find_characteristics()
 
@@ -221,32 +228,59 @@ class VisionAirClient:
             # Request fresh temperature readings from each sensor
             # Sensor 0 = Probe2 (inlet), 1 = Probe1 (outlet), 2 = Remote
             for sensor in (0, 1, 2):
-                event.clear()
-                current_data = None
-                await self._client.write_gatt_char(
-                    self._command_char, build_sensor_select_request(sensor), response=True
-                )
-                await asyncio.wait_for(event.wait(), timeout=timeout)
+                # Retry loop for reliability
+                for attempt in range(retries + 1):
+                    if not self._client.is_connected:
+                        break  # Don't retry if disconnected
+                    event.clear()
+                    current_data = None
+                    try:
+                        await self._client.write_gatt_char(
+                            self._command_char, build_sensor_select_request(sensor), response=True
+                        )
+                        await asyncio.wait_for(event.wait(), timeout=timeout)
+                        # Success - extract data and break retry loop
+                        if current_data and len(current_data) >= 43:
+                            selector = current_data[34]
+                            fresh_temps[selector] = current_data[32]
+                            last_status_data = current_data
+                        break
+                    except TimeoutError:
+                        if attempt < retries:
+                            await asyncio.sleep(delay)  # Wait before retry
+                    except Exception:
+                        break  # Connection error, move on
 
-                if current_data and len(current_data) >= 43:
-                    selector = current_data[34]
-                    # Byte 32 contains fresh temperature for selected sensor
-                    fresh_temps[selector] = current_data[32]
-                    last_status_data = current_data
+                # Delay between sensors for device stability
+                if self._client.is_connected:
+                    await asyncio.sleep(delay)
 
-            # Request sensor packet for Probe 1 humidity
-            event.clear()
-            current_data = None
-            expected_type = PacketType.SENSOR_RESPONSE
-            await self._client.write_gatt_char(
-                self._command_char, build_sensor_request(), response=True
-            )
-            await asyncio.wait_for(event.wait(), timeout=timeout)
-
-            if current_data and len(current_data) >= 9:
-                probe1_humidity = current_data[8]
+            # Request sensor packet for Probe 1 humidity (with retries)
+            if self._client.is_connected:
+                expected_type = PacketType.SENSOR_RESPONSE
+                for attempt in range(retries + 1):
+                    if not self._client.is_connected:
+                        break
+                    event.clear()
+                    current_data = None
+                    try:
+                        await self._client.write_gatt_char(
+                            self._command_char, build_sensor_request(), response=True
+                        )
+                        await asyncio.wait_for(event.wait(), timeout=timeout)
+                        if current_data and len(current_data) >= 9:
+                            probe1_humidity = current_data[8]
+                        break
+                    except TimeoutError:
+                        if attempt < retries:
+                            await asyncio.sleep(delay)
+                    except Exception:
+                        break
         finally:
-            await self._client.stop_notify(self._status_char)
+            try:
+                await self._client.stop_notify(self._status_char)
+            except Exception:
+                pass  # Ignore errors if already disconnected
 
         if not last_status_data:
             raise TimeoutError("No status response received")
