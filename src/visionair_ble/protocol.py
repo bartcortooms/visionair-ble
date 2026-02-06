@@ -739,9 +739,7 @@ def build_schedule_toggle(enable: bool) -> bytes:
     )
 
 
-def build_schedule_write(
-    config: ScheduleConfig, *, _experimental: bool = False
-) -> bytes:
+def build_schedule_write(config: ScheduleConfig) -> bytes:
     """Build a schedule config write packet (type 0x40).
 
     Constructs a 55-byte packet with 24 hourly time slots. Each slot is
@@ -749,17 +747,13 @@ def build_schedule_write(
 
     Args:
         config: ScheduleConfig with exactly 24 slots
-        _experimental: Must be True to use this function
 
     Returns:
         55-byte packet: a5b6 40 06 31 00 [24x2-byte slots] [checksum]
 
     Raises:
-        ExperimentalFeatureError: If _experimental is not True
         ValueError: If config does not have exactly 24 slots
     """
-    _require_experimental(_experimental, "Schedule write")
-
     if len(config.slots) != 24:
         raise ValueError(
             f"Schedule must have exactly 24 slots, got {len(config.slots)}"

@@ -388,7 +388,7 @@ class TestScheduleRead:
 
         async with connect(address, proxy_host, proxy_key) as client:
             visionair = VisionAirClient(client)
-            config = await visionair.get_schedule(_experimental=True, timeout=15.0)
+            config = await visionair.get_schedule(timeout=15.0)
 
             assert isinstance(config, ScheduleConfig)
             assert len(config.slots) == 24
@@ -396,6 +396,60 @@ class TestScheduleRead:
             for i, slot in enumerate(config.slots):
                 print(f"  Hour {i:2d}: {slot.preheat_temp}C {slot.airflow_mode} (0x{slot.mode_byte:02x})")
                 assert 0 <= slot.preheat_temp <= 40
+
+
+@pytest.mark.e2e
+class TestScheduleWrite:
+    """Test schedule write/read round-trip via real device.
+
+    WARNING: These tests MODIFY device settings. The original schedule is
+    always restored in a finally block, even on test failure.
+    """
+
+    @pytest.mark.asyncio
+    async def test_write_schedule_roundtrip(
+        self, device_address: str | None, proxy_host: str | None, proxy_key: str | None
+    ) -> None:
+        """Test writing a schedule and reading it back unchanged."""
+        from visionair_ble.protocol import ScheduleConfig
+
+        address = await find_device(device_address)
+
+        async with connect(address, proxy_host, proxy_key) as client:
+            visionair = VisionAirClient(client)
+
+            # Read current schedule
+            original = await visionair.get_schedule(timeout=15.0)
+            assert isinstance(original, ScheduleConfig)
+            assert len(original.slots) == 24
+
+            try:
+                # Write the same schedule back
+                await visionair.set_schedule(original, timeout=15.0)
+                print("  Wrote schedule back to device")
+
+                # Read it again and verify it matches
+                readback = await visionair.get_schedule(timeout=15.0)
+                assert isinstance(readback, ScheduleConfig)
+                assert len(readback.slots) == 24
+
+                for i, (orig, back) in enumerate(
+                    zip(original.slots, readback.slots, strict=True)
+                ):
+                    assert orig.preheat_temp == back.preheat_temp, (
+                        f"Hour {i}: preheat_temp {orig.preheat_temp} != {back.preheat_temp}"
+                    )
+                    assert orig.mode_byte == back.mode_byte, (
+                        f"Hour {i}: mode_byte 0x{orig.mode_byte:02x} != 0x{back.mode_byte:02x}"
+                    )
+
+                print("  Round-trip verified: all 24 slots match")
+            finally:
+                # Always restore original schedule
+                try:
+                    await visionair.set_schedule(original, timeout=15.0)
+                except Exception:
+                    pass
 
 
 @pytest.mark.e2e

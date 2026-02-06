@@ -413,15 +413,10 @@ class TestScheduleSlot:
 class TestBuildScheduleWrite:
     """Tests for schedule write packet building."""
 
-    def test_requires_experimental(self):
-        config = ScheduleConfig(slots=[ScheduleSlot(16, 0x28)] * 24)
-        with pytest.raises(ExperimentalFeatureError):
-            build_schedule_write(config)
-
     def test_all_low(self):
         """Build schedule with all LOW slots at 16C."""
         config = ScheduleConfig(slots=[ScheduleSlot(16, 0x28)] * 24)
-        packet = build_schedule_write(config, _experimental=True)
+        packet = build_schedule_write(config)
 
         assert len(packet) == 55
         assert packet[:2] == MAGIC
@@ -437,7 +432,7 @@ class TestBuildScheduleWrite:
         slots = [ScheduleSlot(16, 0x28)] * 24
         slots[1] = ScheduleSlot(16, 0x32)  # Hour 1: MEDIUM
         config = ScheduleConfig(slots=slots)
-        packet = build_schedule_write(config, _experimental=True)
+        packet = build_schedule_write(config)
 
         assert len(packet) == 55
         assert packet[6:8] == bytes([0x10, 0x28])  # Hour 0: LOW
@@ -447,12 +442,12 @@ class TestBuildScheduleWrite:
     def test_wrong_slot_count_too_few(self):
         config = ScheduleConfig(slots=[ScheduleSlot(16, 0x28)] * 12)
         with pytest.raises(ValueError, match="24 slots"):
-            build_schedule_write(config, _experimental=True)
+            build_schedule_write(config)
 
     def test_wrong_slot_count_too_many(self):
         config = ScheduleConfig(slots=[ScheduleSlot(16, 0x28)] * 25)
         with pytest.raises(ValueError, match="24 slots"):
-            build_schedule_write(config, _experimental=True)
+            build_schedule_write(config)
 
     def test_preserves_all_mode_bytes(self):
         """All mode bytes including unknown ones are written as-is for round-trip."""
@@ -460,7 +455,7 @@ class TestBuildScheduleWrite:
         slots[5] = ScheduleSlot(16, 0x3C)  # HIGH
         slots[6] = ScheduleSlot(16, 0xFF)  # Unknown mode byte
         config = ScheduleConfig(slots=slots)
-        packet = build_schedule_write(config, _experimental=True)
+        packet = build_schedule_write(config)
 
         # Hour 5 at offset 6 + 5*2 = 16
         assert packet[16] == 0x10  # 16C
@@ -564,7 +559,7 @@ class TestScheduleRoundTrip:
         slots[3] = ScheduleSlot(18, 0x32)  # Hour 3: MEDIUM at 18C
         original = ScheduleConfig(slots=slots)
 
-        packet = build_schedule_write(original, _experimental=True)
+        packet = build_schedule_write(original)
 
         # Simulate device response: same slot data, different type byte, padded
         response = bytearray(182)
@@ -576,7 +571,7 @@ class TestScheduleRoundTrip:
         parsed = parse_schedule_config(bytes(response))
         assert parsed is not None
 
-        rebuilt = build_schedule_write(parsed, _experimental=True)
+        rebuilt = build_schedule_write(parsed)
         # Slot data (bytes 6-53) should match exactly
         assert packet[6:54] == rebuilt[6:54]
 
@@ -586,7 +581,7 @@ class TestScheduleRoundTrip:
         slots[10] = ScheduleSlot(20, 0x3C)  # HIGH
         original = ScheduleConfig(slots=slots)
 
-        packet = build_schedule_write(original, _experimental=True)
+        packet = build_schedule_write(original)
 
         response = bytearray(182)
         response[0:2] = MAGIC
@@ -598,7 +593,7 @@ class TestScheduleRoundTrip:
         assert parsed.slots[10].mode_byte == 0x3C
         assert parsed.slots[10].airflow_mode == "high"
 
-        rebuilt = build_schedule_write(parsed, _experimental=True)
+        rebuilt = build_schedule_write(parsed)
         assert packet[6:54] == rebuilt[6:54]
 
 
@@ -690,13 +685,13 @@ class TestScheduleCapturedData:
     def test_run4_rebuild_matches(self):
         """Rebuilding from parsed Run 4 data produces identical slot bytes."""
         config = parse_schedule_config(self._to_response(self.RUN4_WRITE))
-        rebuilt = build_schedule_write(config, _experimental=True)
+        rebuilt = build_schedule_write(config)
         assert rebuilt[6:54] == self.RUN4_WRITE[6:54]
 
     def test_run5_rebuild_matches(self):
         """Rebuilding from parsed Run 5 data produces identical slot bytes."""
         config = parse_schedule_config(self._to_response(self.RUN5_WRITE))
-        rebuilt = build_schedule_write(config, _experimental=True)
+        rebuilt = build_schedule_write(config)
         assert rebuilt[6:54] == self.RUN5_WRITE[6:54]
 
     def test_default_schedule_pattern(self):

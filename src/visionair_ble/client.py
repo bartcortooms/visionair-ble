@@ -29,7 +29,6 @@ from .protocol import (
     PacketType,
     ScheduleConfig,
     SensorData,
-    _require_experimental,
     build_boost_command,
     build_full_data_request,
     build_holiday_command,
@@ -609,26 +608,21 @@ class VisionAirClient:
             summer_limit_enabled=enabled,
         )
 
-    async def get_schedule(
-        self, *, _experimental: bool = False, timeout: float = 10.0
-    ) -> ScheduleConfig:
+    async def get_schedule(self, *, timeout: float = 10.0) -> ScheduleConfig:
         """Read the current schedule configuration from the device.
 
         Sends a REQUEST with param 0x27 which triggers a SCHEDULE_CONFIG (0x46)
         response containing 24 hourly time slots.
 
         Args:
-            _experimental: Must be True to use this function
             timeout: How long to wait for response in seconds
 
         Returns:
             ScheduleConfig with 24 hourly slots
 
         Raises:
-            ExperimentalFeatureError: If _experimental is not True
             TimeoutError: If no SCHEDULE_CONFIG response within timeout
         """
-        _require_experimental(_experimental, "Schedule read")
         self._find_characteristics()
 
         config_data: bytes | None = None
@@ -663,7 +657,6 @@ class VisionAirClient:
         self,
         config: ScheduleConfig,
         *,
-        _experimental: bool = False,
         timeout: float = 10.0,
     ) -> None:
         """Write a schedule configuration to the device.
@@ -673,18 +666,15 @@ class VisionAirClient:
 
         Args:
             config: ScheduleConfig with exactly 24 slots
-            _experimental: Must be True to use this function
             timeout: How long to wait for acknowledgment in seconds
 
         Raises:
-            ExperimentalFeatureError: If _experimental is not True
             ValueError: If config is invalid
             TimeoutError: If no acknowledgment received
         """
-        _require_experimental(_experimental, "Schedule write")
         self._find_characteristics()
 
-        packet = build_schedule_write(config, _experimental=True)
+        packet = build_schedule_write(config)
 
         ack_received = asyncio.Event()
 

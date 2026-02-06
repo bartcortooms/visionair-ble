@@ -109,11 +109,6 @@ for address, name in devices:
 | `clear_holiday()` | Disable holiday mode |
 | `set_preheat(enable, temperature)` | Control winter preheat |
 | `set_summer_limit(enable)` | Control summer limit |
-
-**Experimental** (require `_experimental=True`):
-
-| Method | Description |
-|--------|-------------|
 | `get_schedule()` | Read 24-hour time slot configuration |
 | `set_schedule(config)` | Write 24-hour time slot configuration |
 
@@ -123,7 +118,7 @@ for address, name in devices:
 
 **SensorData** (from `get_sensors()`): Contains fresh probe temperature and humidity readings.
 
-**ScheduleConfig** / **ScheduleSlot** (experimental): 24-hour schedule with per-slot airflow mode and preheat temperature.
+**ScheduleConfig** / **ScheduleSlot**: 24-hour schedule with per-slot airflow mode and preheat temperature.
 
 See [docs/protocol.md](docs/protocol.md) for complete field documentation.
 

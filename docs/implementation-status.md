@@ -18,8 +18,8 @@ This document tracks which protocol features from [protocol.md](protocol.md) are
 | Fixed Air Flow (0x1a, byte7=0x04) — hypothetical | Partial | Experimental | `build_fixed_airflow_activate()` — packet captured ([#7](https://github.com/bartcortooms/visionair-ble/issues/7)) but protocol path uncertain ([#14](https://github.com/bartcortooms/visionair-ble/issues/14)) |
 | Schedule Config Request (0x10, param 0x27) | Yes | Yes | `build_schedule_config_request()` — [#2](https://github.com/bartcortooms/visionair-ble/issues/2) |
 | Schedule Toggle (0x10, param 0x1d) | Yes | Yes | `build_schedule_toggle()` — [#2](https://github.com/bartcortooms/visionair-ble/issues/2) |
-| Schedule Config Write (0x40) | Yes | Experimental | `build_schedule_write()`, `VisionAirClient.set_schedule()` — [#2](https://github.com/bartcortooms/visionair-ble/issues/2) |
-| Schedule Config Read (0x46) | Yes | Experimental | `parse_schedule_config()`, `VisionAirClient.get_schedule()` — [#2](https://github.com/bartcortooms/visionair-ble/issues/2) |
+| Schedule Config Write (0x40) | Yes | Yes | `build_schedule_write()`, `VisionAirClient.set_schedule()` — [#2](https://github.com/bartcortooms/visionair-ble/issues/2) |
+| Schedule Config Read (0x46) | Yes | Yes | `parse_schedule_config()`, `VisionAirClient.get_schedule()` — [#2](https://github.com/bartcortooms/visionair-ble/issues/2) |
 | Schedule Query (0x47) | Partial | No | Triggered by param 0x26, structure unclear — [#2](https://github.com/bartcortooms/visionair-ble/issues/2) |
 | Schedule Command (0x1a, byte7=0x05) | Partial | No | — [#2](https://github.com/bartcortooms/visionair-ble/issues/2) |
 
@@ -32,7 +32,7 @@ This document tracks which protocol features from [protocol.md](protocol.md) are
 | Status - bypass state | Partial | No | — [#5](https://github.com/bartcortooms/visionair-ble/issues/5) |
 | Sensor/History (0x03) | Yes | Yes | `parse_sensors()` |
 | Schedule (0x02) - current time | Yes | No | — [#2](https://github.com/bartcortooms/visionair-ble/issues/2) |
-| Schedule Config Response (0x46) | Yes | Experimental | `parse_schedule_config()` — validated against real captures |
+| Schedule Config Response (0x46) | Yes | Yes | `parse_schedule_config()` — validated against real captures |
 | Settings Ack (0x23) | Partial | No | — |
 | Status - holiday_days (byte 43) | Yes | Yes | `parse_status()` → `DeviceStatus.holiday_days` |
 | Holiday Status (0x50) | Partial | No | Constant response, not useful for state |
@@ -58,15 +58,6 @@ Features marked "Experimental" require `_experimental=True` flag to use. They ha
   - Never observed in current captures; packet mapping is unconfirmed
   - We don't know how the device distinguishes between these three modes
   - May require different preceding queries or internal state
-
-- **Schedule Config (0x40, 0x46)** — Implemented as experimental (`_experimental=True` required):
-  - `build_schedule_write()` / `set_schedule()`: Builds 0x40 packet, device responds with SETTINGS_ACK
-  - `parse_schedule_config()` / `get_schedule()`: Parses 0x46 response, triggered by REQUEST param 0x27
-  - `build_schedule_config_request()`: Sends REQUEST param 0x27 to get current schedule
-  - `build_schedule_toggle()`: Sends REQUEST param 0x1D to enable/disable time slots
-  - `ScheduleSlot` / `ScheduleConfig`: Data structures for schedule representation
-  - Mode bytes: LOW=0x28, MEDIUM=0x32, HIGH=0x3C (all three verified via captures)
-  - Needs: e2e test verification (Phases 1-2 complete)
 
 ## Needs Verification
 
