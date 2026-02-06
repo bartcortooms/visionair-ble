@@ -84,40 +84,7 @@ BLE GATT doesn't need this — packets are already framed by the protocol. Inclu
 2. It was later wrapped in BLE with minimal changes
 3. Or the developers were unfamiliar with BLE best practices
 
-## Implications for Reverse Engineering
-
-### What This Tells Us
-
-1. **The codebase is likely based on PSoC Creator IDE** with the BLE component configured via GUI
-2. **No custom protocol library** — Just raw byte manipulation
-3. **Protocol evolved organically** — Fields added where they fit, not designed upfront
-4. **UART debugging may exist** — If they had UART protocol, there might be debug commands
-
-### Where to Look for Answers
-
-1. **Cypress AN91162** — "Creating a BLE Custom Profile" application note describes exactly this pattern
-2. **PSoC-4-BLE GitHub repo** — The Day003 project structure likely matches VisionAir's
-3. **BLE_gatt.c generated file** — Contains UUID definitions in `cyBle_attUuid128[][16u]` array
-4. **Firmware updates** — If the device supports OTA, the update format might reveal more
-
-### 5. RTC Implementation (superseded legacy hypothesis)
-
-Early captures suggested special-mode commands (byte7=0x04 SETTINGS packets) might
-include HH:MM:SS values. This hypothesis has been **superseded**: controlled captures
-(2026) show Holiday control uses `REQUEST 0x1a` value packets, not time-encoded
-SETTINGS packets.
-
-The PSoC BLE RTC example (Day033) provides general background on how the device
-may keep time internally:
-
-- PSoC uses **Watchdog Timer** for 1-second interrupts to maintain time
-- The `CYBLE_CTS_CURRENT_TIME_T` struct stores hours, minutes, seconds
-- Time sync from app is common because low-power devices lack battery-backed RTC
-
-This is retained as reference for understanding the device's timekeeping, not as
-an explanation of the Holiday/special-mode command protocol.
-
-### 6. BLE Event Handler Pattern
+### 5. BLE Event Handler Pattern
 
 The Day003 code shows the exact pattern VisionAir uses:
 
@@ -149,14 +116,7 @@ void CustomEventHandler(uint32 event, void * eventParam)
 
 VisionAir's command processing likely follows this exact structure — matching handle 0x0013 and parsing the command bytes.
 
-## Open Questions
-
-- Does the device expose UART for debugging/configuration?
-- Is there an installer/factory mode accessible via BLE?
-- What differentiates Holiday/Night Vent/Fixed Air Flow commands in current firmware path? (May be state machine on device)
-- Is there a bootloader for OTA updates? (PSoC supports this)
-
-### 7. Temperature Measurement Pattern
+### 6. Temperature Measurement Pattern
 
 Day005 Health Thermometer shows how PSoC measures temperature:
 
@@ -173,6 +133,29 @@ temperature = temperature / 100;  // Remove decimal places
 
 VisionAir's whole-degree temperature readings (Probe 1, Probe 2, Remote) likely use similar ADC-based thermistor measurement, stored as uint8 (0-255°C range, only positive temps needed for HVAC).
 
+## Implications for Reverse Engineering
+
+### What This Tells Us
+
+1. **The codebase is likely based on PSoC Creator IDE** with the BLE component configured via GUI
+2. **No custom protocol library** — Just raw byte manipulation
+3. **Protocol evolved organically** — Fields added where they fit, not designed upfront
+4. **UART debugging may exist** — If they had UART protocol, there might be debug commands
+
+### Where to Look for Answers
+
+1. **Cypress AN91162** — "Creating a BLE Custom Profile" application note describes exactly this pattern
+2. **PSoC-4-BLE GitHub repo** — The Day003 project structure likely matches VisionAir's
+3. **BLE_gatt.c generated file** — Contains UUID definitions in `cyBle_attUuid128[][16u]` array
+4. **Firmware updates** — If the device supports OTA, the update format might reveal more
+
+## Open Questions
+
+- Does the device expose UART for debugging/configuration?
+- Is there an installer/factory mode accessible via BLE?
+- What differentiates Holiday/Night Vent/Fixed Air Flow commands in current firmware path? (May be state machine on device)
+- Is there a bootloader for OTA updates? (PSoC supports this)
+
 ## Summary of VisionAir Implementation Model
 
 Based on PSoC-4-BLE code analysis:
@@ -180,9 +163,25 @@ Based on PSoC-4-BLE code analysis:
 1. **Based on Day003 Custom Profile** — Identical handles (0x000e, 0x0013, 0x000f)
 2. **Struct serialization** — `CYBLE_CYPACKED` structs sent via `CyBle_GattsNotification()`
 3. **Event-driven command processing** — `CustomEventHandler()` matches attribute handles
-4. **WDT-based timekeeping** — Potentially relevant if timestamp-based mode commands are used
-5. **Thermistor ADC measurement** — Standard PSoC pattern for temperature probes
-6. **UART heritage** — Magic bytes + XOR checksum from pre-BLE serial protocol
+4. **Thermistor ADC measurement** — Standard PSoC pattern for temperature probes
+5. **UART heritage** — Magic bytes + XOR checksum from pre-BLE serial protocol
+
+## Appendix: RTC Implementation (superseded hypothesis)
+
+Early captures suggested special-mode commands (byte7=0x04 SETTINGS packets) might
+include HH:MM:SS values. This hypothesis has been **superseded**: controlled captures
+(2026) show Holiday control uses `REQUEST 0x1a` value packets, not time-encoded
+SETTINGS packets.
+
+The PSoC BLE RTC example (Day033) provides general background on how the device
+may keep time internally:
+
+- PSoC uses **Watchdog Timer** for 1-second interrupts to maintain time
+- The `CYBLE_CTS_CURRENT_TIME_T` struct stores hours, minutes, seconds
+- Time sync from app is common because low-power devices lack battery-backed RTC
+
+This is retained as reference for understanding the device's timekeeping, not as
+an explanation of the Holiday/special-mode command protocol.
 
 ## Resources
 

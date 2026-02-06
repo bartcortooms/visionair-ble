@@ -24,10 +24,10 @@ uv run pytest -m e2e -v
 
 ### E2E Tests
 
-E2E tests require a real VisionAir device. Configuration is in `.env`:
-- `PROXY_HOST` - ESPHome BLE proxy IP address
-- `PROXY_KEY` - ESPHome API encryption key
-- `DEVICE_ADDRESS` - VisionAir device MAC address
+E2E tests require a real VisionAir device. Configuration via `.env` or CLI flags:
+- `DEVICE_ADDRESS` - VisionAir device MAC address (or `--device-address`)
+- `PROXY_HOST` - ESPHome BLE proxy IP address (or `--proxy-host`)
+- `PROXY_KEY` - ESPHome API encryption key (or `--proxy-key`)
 
 **Important:** The VisionAir device only supports one BLE connection at a time. Before running E2E tests:
 1. **Disable Home Assistant's BLE proxy integration** - HA must not be using the ESPHome proxy
@@ -59,6 +59,10 @@ Maintain a logbook under `docs/logbook/` to record discoveries, work done, and n
 - Key discoveries and findings
 - Open questions and things to revisit
 - Raw observations that might be useful later
+
+## VMI Control Script (`scripts/capture/vmictl.py`)
+
+Continuously improve `vmictl.py` as issues are encountered during capture sessions. When a command fails, produces wrong coordinates, or a needed command is missing, fix the script before retrying manually. The skill documentation (`.claude/skills/vmi-reverse-engineering/`) should stay in sync with the actual script capabilities.
 
 ## Protocol Reverse Engineering
 

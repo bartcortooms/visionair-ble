@@ -502,23 +502,6 @@ The volume is configured during professional installation based on the ventilate
 | Purevent Vision'R | 350 m³/h | Houses |
 | Pro 1000 | 1000 m³/h | Commercial |
 
-### 7.3 Holiday Mode Encoding
-
-Holiday control uses `REQUEST` (type `0x10`) with param `0x1a`:
-
-| Packet | Meaning |
-|--------|---------|
-| `a5b61006051a000000NNCC` | Holiday command (`NN` = days, `CC` = checksum) |
-
-Where:
-- `0x10` packet type (`REQUEST`), `0x06` extended format
-- Request param `0x1a` in byte 5
-- Byte 9 = holiday days (0=OFF, 1-255=active)
-
-Read back: DEVICE_STATE byte 43 contains the current holiday days value.
-The `0x50` response from holiday status query (param `0x2c`) is constant
-and should not be used for state monitoring.
-
 ## 8. Library
 
 See [implementation-status.md](implementation-status.md) for feature implementation tracking.

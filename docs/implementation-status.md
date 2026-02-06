@@ -48,12 +48,6 @@ This document tracks which protocol features from [protocol.md](protocol.md) are
 | Volume-based calculation | Yes | Yes | ACH multipliers |
 | Sensor metadata for HA | Yes | Yes | Auto-discovery support |
 
-## Priority Candidates
-
-Features that are fully documented and ready for implementation:
-
-1. **Schedule Config** — Time slot read/write for automated ventilation profiles
-
 ## Experimental Features
 
 Features marked "Experimental" require `_experimental=True` flag to use. They have known gaps in protocol understanding:
