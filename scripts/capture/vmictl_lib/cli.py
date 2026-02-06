@@ -52,7 +52,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\nERROR: Unknown command: {command}", file=sys.stderr)
         return 1
 
-    ctl = VMICtl(adb_target=os.environ.get("VMI_ADB_TARGET", ""), project_root=project_root)
+    ctl = VMICtl(adb_target=os.environ.get("ADB_TARGET", ""), project_root=project_root)
     try:
         return spec.handler(ctl, args)
     except Exception as exc:  # noqa: BLE001

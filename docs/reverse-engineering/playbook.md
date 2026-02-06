@@ -23,10 +23,10 @@ cp .env.example .env
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `VMI_MAC` | Device MAC address | `00:A0:50:XX:XX:XX` |
-| `VMI_ADB_TARGET` | ADB device (optional, auto-detects) | `192.168.1.100:5555` |
-| `VMI_RESOLUTION` | Force screen resolution (optional) | `1080x2340` |
-| `ESPHOME_PROXY_HOST` | ESPHome BLE proxy IP (optional) | `192.168.1.100` |
+| `VISIONAIR_MAC` | Device MAC address | `00:A0:50:XX:XX:XX` |
+| `ADB_TARGET` | ADB device (optional, auto-detects) | `192.168.1.100:5555` |
+| `PHONE_RESOLUTION` | Force screen resolution (optional) | `1080x2340` |
+| `ESPHOME_PROXY_HOST` | ESPHome BLE proxy IP (optional) | `192.168.1.50` |
 | `ESPHOME_API_KEY` | ESPHome API key (optional) | — |
 
 ### ADB Connection
@@ -39,8 +39,8 @@ adb devices
 adb tcpip 5555
 adb connect <phone-ip>:5555
 
-# Multiple devices — set VMI_ADB_TARGET or use:
-VMI_ADB_TARGET=<ip>:5555 ./scripts/capture/vmictl.py <command>
+# Multiple devices — set ADB_TARGET or use:
+ADB_TARGET=<ip>:5555 ./scripts/capture/vmictl.py <command>
 ```
 
 ### Bluetooth HCI Snoop Logging
@@ -109,7 +109,7 @@ python scripts/capture/btsnooz.py /tmp/btsnooz_hci.log /tmp/btsnoop.log
 
 ### Troubleshooting
 
-**"more than one device/emulator"** — Set `VMI_ADB_TARGET` to specify which device.
+**"more than one device/emulator"** — Set `ADB_TARGET` to specify which device.
 
 **No btsnoop log in bugreport** — Ensure BT HCI snoop is set to "Enabled" (not filtered) in Developer Options, toggle Bluetooth off/on, and perform some BLE activity before pulling.
 

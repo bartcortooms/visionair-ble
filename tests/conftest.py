@@ -47,16 +47,16 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 @pytest.fixture
 def device_address(request: pytest.FixtureRequest) -> str | None:
     """Fixture providing the device address from CLI, env, or None for auto-scan."""
-    return request.config.getoption("--device-address") or os.environ.get("DEVICE_ADDRESS")
+    return request.config.getoption("--device-address") or os.environ.get("VISIONAIR_MAC")
 
 
 @pytest.fixture
 def proxy_host(request: pytest.FixtureRequest) -> str | None:
     """Fixture providing the proxy host from CLI or env."""
-    return request.config.getoption("--proxy-host") or os.environ.get("PROXY_HOST")
+    return request.config.getoption("--proxy-host") or os.environ.get("ESPHOME_PROXY_HOST")
 
 
 @pytest.fixture
 def proxy_key(request: pytest.FixtureRequest) -> str | None:
     """Fixture providing the proxy API key from CLI or env."""
-    return request.config.getoption("--proxy-key") or os.environ.get("PROXY_KEY")
+    return request.config.getoption("--proxy-key") or os.environ.get("ESPHOME_API_KEY")

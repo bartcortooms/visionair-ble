@@ -7,7 +7,7 @@ useful for debugging protocol issues or stale sensor values.
 Usage:
     python dump_raw_status.py <MAC_ADDRESS>
     # or
-    VMI_MAC=00:A0:50:... python dump_raw_status.py
+    VISIONAIR_MAC=00:A0:50:... python dump_raw_status.py
 """
 
 import asyncio
@@ -179,9 +179,9 @@ async def main(address: str):
 
 
 if __name__ == "__main__":
-    address = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("VMI_MAC")
+    address = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("VISIONAIR_MAC")
     if not address:
         print("Usage: python dump_raw_status.py <MAC_ADDRESS>")
-        print("   or: VMI_MAC=00:A0:50:... python dump_raw_status.py")
+        print("   or: VISIONAIR_MAC=00:A0:50:... python dump_raw_status.py")
         sys.exit(1)
     asyncio.run(main(address))

@@ -25,9 +25,9 @@ uv run pytest -m e2e -v
 ### E2E Tests
 
 E2E tests require a real VisionAir device. Configuration via `.env` or CLI flags:
-- `DEVICE_ADDRESS` - VisionAir device MAC address (or `--device-address`)
-- `PROXY_HOST` - ESPHome BLE proxy IP address (or `--proxy-host`)
-- `PROXY_KEY` - ESPHome API encryption key (or `--proxy-key`)
+- `VISIONAIR_MAC` - VisionAir device MAC address (or `--device-address`)
+- `ESPHOME_PROXY_HOST` - ESPHome BLE proxy IP address (or `--proxy-host`)
+- `ESPHOME_API_KEY` - ESPHome API encryption key (or `--proxy-key`)
 
 **Important:** The VisionAir device only supports one BLE connection at a time. Before running E2E tests:
 1. **Disable Home Assistant's BLE proxy integration** - HA must not be using the ESPHome proxy

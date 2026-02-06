@@ -20,7 +20,7 @@ These tests are SKIPPED by default. To run them:
     python tests/test_e2e.py [device_address]
 
     # Run directly with proxy (uses env vars)
-    PROXY_HOST=192.168.1.100 PROXY_KEY=xxx python tests/test_e2e.py
+    ESPHOME_PROXY_HOST=192.168.1.100 ESPHOME_API_KEY=xxx python tests/test_e2e.py
 
 Note: These tests are read-only and do not modify device settings.
 """
@@ -617,9 +617,9 @@ if __name__ == "__main__":
     load_dotenv()
 
     # Get settings from args or environment
-    address = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("DEVICE_ADDRESS")
-    proxy_host = os.environ.get("PROXY_HOST")
-    proxy_key = os.environ.get("PROXY_KEY")
+    address = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("VISIONAIR_MAC")
+    proxy_host = os.environ.get("ESPHOME_PROXY_HOST")
+    proxy_key = os.environ.get("ESPHOME_API_KEY")
 
     success = asyncio.run(run_e2e_tests(address, proxy_host, proxy_key))
     sys.exit(0 if success else 1)
