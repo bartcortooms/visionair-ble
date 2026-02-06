@@ -14,22 +14,22 @@ This document tracks which protocol features from [protocol.md](protocol.md) are
 | Settings (0x1a) - airflow/preheat/summer | Yes | Yes | `build_settings_packet()` |
 | Holiday Command (0x10, param 0x1a) | Yes | Yes | `build_holiday_command(days)`, `VisionAirClient.set_holiday()` / `clear_holiday()` |
 | Holiday Status Query (0x10, param 0x2c) | Yes | Yes | `build_holiday_status_query()` |
-| Night Ventilation (0x1a, byte7=0x04) — hypothetical | Partial | Experimental | `build_night_ventilation_activate()` (SETTINGS-based; not observed in current captures) |
-| Fixed Air Flow (0x1a, byte7=0x04) — hypothetical | Partial | Experimental | `build_fixed_airflow_activate()` (SETTINGS-based; not observed in current captures) |
-| Schedule Config Write (0x40) | Experimental | Experimental | `build_schedule_write()`, `VisionAirClient.set_schedule()` |
-| Schedule Config Read (0x46) | Experimental | Experimental | `parse_schedule_config()`, `VisionAirClient.get_schedule()` |
-| Schedule Query (0x47) | Experimental | No | Direction/structure unclear |
-| Schedule Command (0x1a, byte7=0x05) | Partial | No | — |
+| Night Ventilation (0x1a, byte7=0x04) — hypothetical | Partial | Experimental | `build_night_ventilation_activate()` — [#6](https://github.com/bartcortooms/visionair-ble/issues/6) |
+| Fixed Air Flow (0x1a, byte7=0x04) — hypothetical | Partial | Experimental | `build_fixed_airflow_activate()` — packet captured ([#7](https://github.com/bartcortooms/visionair-ble/issues/7)) but protocol path uncertain ([#14](https://github.com/bartcortooms/visionair-ble/issues/14)) |
+| Schedule Config Write (0x40) | Experimental | Experimental | `build_schedule_write()`, `VisionAirClient.set_schedule()` — [#2](https://github.com/bartcortooms/visionair-ble/issues/2) |
+| Schedule Config Read (0x46) | Experimental | Experimental | `parse_schedule_config()`, `VisionAirClient.get_schedule()` — [#2](https://github.com/bartcortooms/visionair-ble/issues/2) |
+| Schedule Query (0x47) | Experimental | No | Direction/structure unclear — [#2](https://github.com/bartcortooms/visionair-ble/issues/2) |
+| Schedule Command (0x1a, byte7=0x05) | Partial | No | — [#2](https://github.com/bartcortooms/visionair-ble/issues/2) |
 
 ## Responses (Notification Parsing)
 
 | Feature | Documented | Implemented | Function |
 |---------|------------|-------------|----------|
 | Status (0x01) - core fields | Yes | Yes | `parse_status()` |
-| Status - diagnostic bitfield (byte 54) | Partial | No | Bit mapping unverified |
-| Status - bypass state | Partial | No | — |
+| Status - diagnostic bitfield (byte 54) | Partial | No | Bit mapping unverified — [#4](https://github.com/bartcortooms/visionair-ble/issues/4) |
+| Status - bypass state | Partial | No | — [#5](https://github.com/bartcortooms/visionair-ble/issues/5) |
 | Sensor/History (0x03) | Yes | Yes | `parse_sensors()` |
-| Schedule (0x02) - current time | Yes | No | — |
+| Schedule (0x02) - current time | Yes | No | — [#2](https://github.com/bartcortooms/visionair-ble/issues/2) |
 | Schedule Config Response (0x46) | Experimental | Experimental | `parse_schedule_config()` — needs e2e verification |
 | Settings Ack (0x23) | Partial | No | — |
 | Status - holiday_days (byte 43) | Yes | Yes | `parse_status()` → `DeviceStatus.holiday_days` |
