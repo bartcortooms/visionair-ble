@@ -108,10 +108,22 @@ Requests fresh data for a specific sensor. Byte 7 selects which sensor:
 | 0x01 | Probe 1 (Resistor outlet) | `a5b610060518000000010a` |
 | 0x02 | Remote Control | `a5b6100605180000000209` |
 
-The response's sensor selector (byte 34) matches the requested sensor, and
-byte 32 contains the fresh temperature for that sensor.
+The device responds with a DEVICE_STATE packet, but the response contains
+**stale data from the previously-selected sensor**. The device switches
+internally AFTER sending its response.
 
-To get fresh readings for all sensors, send all three requests in sequence.
+To get a fresh reading for the requested sensor, send a follow-up
+Device State Request (param 0x03) and check that byte 34 (selector)
+matches the requested sensor. Timing varies by sensor type:
+
+| Sensor | Switch Speed | Notes |
+|--------|-------------|-------|
+| Probe 1, Probe 2 (wired) | Fast | Usually matches on 1st follow-up |
+| Remote (RF) | Slow | Often needs 2-3 follow-up requests |
+
+> **Important:** The PROBE_SENSORS packet (type 0x03) provides live
+> Probe 1 and Probe 2 temperatures without sensor cycling. Only Remote
+> temperature requires the sensor_select mechanism.
 
 > **Verified (2026-02-05):** Re-analyzed captures confirming byte7 selects
 > the sensor explicitly. The app sends requests in order 0→2→1 to refresh all sensors.
@@ -175,7 +187,7 @@ Structure: `a5b6 1a 06 06 1a <preheat> <mode> <temp> <af1> <af2> <checksum>`
 | HIGH | 0x07 | 0x30 | `a5b61a06061a020210073027` |
 
 > **Note:** These byte values are internal device references, not m³/h values.
-> See [Volume-Based Calculations](#62-volume-based-calculations) for actual airflow.
+> See [Volume-Based Calculations](#72-volume-based-calculations) for actual airflow.
 >
 > **Hypothesis (medium confidence):** Based on Cypress PSoC patterns, these may be
 > **PWM duty cycle pairs** for the fan motor. PSoC demo code uses similar two-value
@@ -298,9 +310,9 @@ Responses arrive as notifications on characteristic handle 0x000e. Subscribe by 
 | 28-29 | 2 | Filter life days (LE u16) | 330 |
 | 32 | 1 | **Live temperature** for selected sensor (see byte 34) | 19 |
 | 34 | 1 | Sensor selector | 0/1/2 |
-| 35 | 1 | Probe 1 temperature (°C) | 16 |
+| 35 | 1 | Probe 1 temperature (°C) — **often stale** | 16 |
 | 38 | 1 | Summer limit temp threshold (°C) | 26 |
-| 42 | 1 | Probe 2 temperature (°C) | 11 |
+| 42 | 1 | Probe 2 temperature (°C) — **often stale** | 11 |
 | 44 | 1 | BOOST active | 0=OFF, 1=ON |
 | 47 | 1 | Airflow indicator | 38/104/194 |
 | 48 | 1 | Airflow mode | 1=MID/MAX, 2=MIN |
@@ -371,14 +383,57 @@ it contains current measurements, not historical data.
 
 | Offset | Size | Description |
 |--------|------|-------------|
+| 4 | 1 | Unknown (observed: 25) |
 | 6 | 1 | Probe 1 temperature (°C) |
 | 8 | 1 | Probe 1 humidity (direct %) |
 | 11 | 1 | Probe 2 temperature (°C) |
 | 13 | 1 | Filter percentage (100 = new) |
+| 15, 20, 25 | 1 each | Unknown (observed: 8, repeating) |
+| 30 | 1 | Unknown (observed: 44) |
+| 31-181 | 151 | All zeros |
 
-## 6. Data Encoding Reference
+> **Note:** This packet does NOT contain Remote sensor data. Remote temperature
+> is only available in the Device State packet (byte 32 when selector=2).
+> Remote humidity is always in Device State byte 4. Full hex dump confirmed
+> no Remote temperature or humidity values present in bytes 14-181.
 
-### 6.1 Airflow Modes
+## 6. Sensor Data Architecture
+
+There is no single packet that contains all sensor temperatures. Data is split
+across two packet types by sensor connectivity:
+
+| Reading | Source | Packet | Notes |
+|---------|--------|--------|-------|
+| Probe 1 temperature | Wired | PROBE_SENSORS byte 6 | Always live |
+| Probe 1 humidity | Wired | PROBE_SENSORS byte 8 | Always live |
+| Probe 2 temperature | Wired | PROBE_SENSORS byte 11 | Always live |
+| Remote humidity | RF | DEVICE_STATE byte 4 | Always present |
+| Remote temperature | RF | DEVICE_STATE byte 32 | **Only when selector (byte 34) = 2** |
+
+The wired probes (Probe 1 = outlet, Probe 2 = inlet) are always available
+in the PROBE_SENSORS packet. The Remote sensor communicates via RF and its
+temperature is only available in the DEVICE_STATE packet when the device's
+internal sensor selector is pointing at it.
+
+### Getting All Readings
+
+To collect all sensor readings, the recommended approach is:
+
+1. Send **Probe Sensors Request** (param 0x07) → Probe 1/2 temps + Probe 1 humidity
+2. Send **Sensor Select** (param 0x18, sensor 2) → Switch to Remote
+3. Send **Device State Request** (param 0x03) → Remote temp (byte 32 when selector=2) + Remote humidity (byte 4)
+
+The handler should collect all notifications without filtering by type, since
+the device has limited notification throughput through BLE proxies. See
+`VisionAirClient.get_fresh_status()` for the implementation.
+
+> **Note:** The Device State packet also contains Probe 1/2 temperatures at
+> bytes 35 and 42, but these are often stale. Use PROBE_SENSORS for reliable
+> probe readings.
+
+## 7. Data Encoding Reference
+
+### 7.1 Airflow Modes
 
 The protocol supports three discrete airflow modes. The byte pairs in settings commands are internal device references:
 
@@ -388,7 +443,7 @@ The protocol supports three discrete airflow modes. The byte pairs in settings c
 | MEDIUM | 0x28, 0x15 | 104 (0x68) |
 | HIGH | 0x07, 0x30 | 194 (0xC2) |
 
-### 6.2 Volume-Based Calculations
+### 7.2 Volume-Based Calculations
 
 Actual airflow (m³/h) depends on the configured volume (bytes 22-23 in status response):
 
@@ -413,7 +468,7 @@ The volume is configured during professional installation based on the ventilate
 | Purevent Vision'R | 350 m³/h | Houses |
 | Pro 1000 | 1000 m³/h | Commercial |
 
-### 6.3 Special Mode Encoding
+### 7.3 Special Mode Encoding
 
 Current confirmed Holiday control encoding in VMI workflow:
 
@@ -428,7 +483,7 @@ Where:
 
 `SETTINGS` byte7=`0x04` remains unconfirmed for current Holiday control path.
 
-## 7. Library
+## 8. Library
 
 See [implementation-status.md](implementation-status.md) for feature implementation tracking.
 
@@ -467,9 +522,11 @@ See [implementation-status.md](implementation-status.md) for feature implementat
 - How to enable/disable "Activating time slots" toggle
 
 **Status/Sensors:**
-- Sensor Cycle Request behavior — needs re-verification against captures
 - Bypass state encoding (weather dependent)
 - What do airflow setting bytes actually represent (PWM? calibration index?)
+- PROBE_SENSORS bytes 4, 15, 20, 25, 30 — non-zero but purpose unknown
+- Device State byte 57 — varies with sensor (11, 25, 28 observed)
+- Device State byte 60 — values 100-210 observed, possibly humidity-related
 
 **Responses:**
 - Holiday Status (0x50) response structure — not decoded
