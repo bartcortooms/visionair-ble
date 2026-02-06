@@ -371,11 +371,10 @@ class TestHolidayMode:
 
 @pytest.mark.e2e
 class TestScheduleRead:
-    """Test schedule reading from real device (read-only, exploratory).
+    """Test schedule reading from real device (read-only).
 
-    This test sends a Full Data Request and listens for a SCHEDULE_CONFIG
-    (0x46) notification. It is not yet confirmed that Full Data Request
-    triggers 0x46 -- this test helps determine that.
+    Sends a Schedule Config Request (param 0x27) and parses the
+    SCHEDULE_CONFIG (0x46) response.
     """
 
     @pytest.mark.asyncio

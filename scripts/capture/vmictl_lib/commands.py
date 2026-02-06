@@ -24,6 +24,11 @@ def _cmd_launch(ctl: VMICtl, args: list[str]) -> int:
     return 0
 
 
+def _cmd_stop(ctl: VMICtl, args: list[str]) -> int:
+    ctl.stop()
+    return 0
+
+
 def _cmd_connect(ctl: VMICtl, args: list[str]) -> int:
     ctl.connect()
     return 0
@@ -104,6 +109,20 @@ def _cmd_holiday_days(ctl: VMICtl, args: list[str]) -> int:
 
 def _cmd_holiday_state(ctl: VMICtl, args: list[str]) -> int:
     print(ctl.ui.holiday_state())
+    return 0
+
+
+def _cmd_schedule_tab(which: str) -> Callable[[VMICtl, list[str]], int]:
+    def handler(ctl: VMICtl, args: list[str]) -> int:
+        ctl.ui.schedule_tab(which)
+        return 0
+
+    return handler
+
+
+def _cmd_schedule_hour(ctl: VMICtl, args: list[str]) -> int:
+    _require_args(args, 1, "schedule-hour requires <0-23>")
+    ctl.ui.schedule_hour(int(args[0]))
     return 0
 
 
@@ -205,6 +224,7 @@ def get_command_specs() -> dict[str, CommandSpec]:
 
     specs: list[CommandSpec] = [
         CommandSpec("launch", "Launch VMI+ app", _cmd_launch),
+        CommandSpec("stop", "Force-stop VMI+ app", _cmd_stop),
         CommandSpec("connect", "Full connect sequence", _cmd_connect),
         CommandSpec("vmci", "Tap VMCI device type", _cmd_vmci),
         CommandSpec("pair", "Tap PAIR", _cmd_pair),
@@ -223,6 +243,9 @@ def get_command_specs() -> dict[str, CommandSpec]:
         CommandSpec("holiday-toggle", "Toggle holiday mode", _cmd_holiday_toggle),
         CommandSpec("holiday-days", "Set holiday days", _cmd_holiday_days),
         CommandSpec("holiday-state", "Read holiday state", _cmd_holiday_state),
+        CommandSpec("schedule-edition", "Time slots: switch to EDITION tab", _cmd_schedule_tab("edition")),
+        CommandSpec("schedule-planning", "Time slots: switch to PLANNING tab", _cmd_schedule_tab("planning")),
+        CommandSpec("schedule-hour", "Time slots: tap hour row (0-23)", _cmd_schedule_hour),
         CommandSpec("screenshot", "Capture screenshot", _cmd_screenshot),
         CommandSpec("back", "Press Android back", _cmd_back),
         CommandSpec("scroll", "Scroll down", _cmd_scroll),

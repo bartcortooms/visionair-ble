@@ -31,6 +31,7 @@ For phone setup, ADB connection, BT snoop logging details, and troubleshooting, 
 |---------|-------------|
 | `connect` | Full sequence: launch → scan → pair → dismiss update dialog |
 | `launch` | Just launch the app |
+| `stop` | Force-stop the VMI+ app |
 | `vmci` | Tap VMCI device type |
 | `pair` | Tap PAIR on scan results |
 | `dismiss` | Dismiss update dialog |
@@ -59,6 +60,13 @@ For phone setup, ADB connection, BT snoop logging details, and troubleshooting, 
 | `special-modes` | Configuration → Special modes (holiday, etc.) |
 | `special-modes-full` | Full nav from home to Special modes |
 | `time-slots` | Configuration → Time slot configuration |
+
+### Schedule Controls (from Time Slot Configuration)
+| Command | Description |
+|---------|-------------|
+| `schedule-edition` | Select EDITION tab |
+| `schedule-planning` | Select PLANNING tab |
+| `schedule-hour <0-23>` | Tap hour row in schedule table |
 
 ### Sensor Selection (from Sensor management)
 | Command | Description |

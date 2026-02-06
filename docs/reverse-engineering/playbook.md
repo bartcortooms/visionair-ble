@@ -92,6 +92,21 @@ python scripts/capture/btsnooz.py /tmp/btsnooz_hci.log /tmp/btsnoop.log
 3. Update entries in `scripts/capture/vmictl_lib/ui_selectors.toml`
 4. Re-run smoke commands: `menu`, `measurements-full`, `sensors`
 
+### Common `vmictl` Navigation Commands
+
+```bash
+# App lifecycle
+./scripts/capture/vmictl.py launch
+./scripts/capture/vmictl.py stop
+./scripts/capture/vmictl.py connect
+
+# Scheduling screen
+./scripts/capture/vmictl.py time-slots
+./scripts/capture/vmictl.py schedule-edition
+./scripts/capture/vmictl.py schedule-planning
+./scripts/capture/vmictl.py schedule-hour 12
+```
+
 ### Troubleshooting
 
 **"more than one device/emulator"** — Set `VMI_ADB_TARGET` to specify which device.

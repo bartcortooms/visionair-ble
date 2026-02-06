@@ -33,6 +33,8 @@ from .protocol import (
     build_boost_command,
     build_full_data_request,
     build_holiday_command,
+    build_schedule_config_request,
+    build_schedule_toggle,
     build_schedule_write,
     build_sensor_request,
     build_sensor_select_request,
@@ -612,12 +614,8 @@ class VisionAirClient:
     ) -> ScheduleConfig:
         """Read the current schedule configuration from the device.
 
-        Sends a Full Data Request and listens for a SCHEDULE_CONFIG (0x46)
-        notification among the responses.
-
-        Note: It is not yet confirmed that Full Data Request triggers a 0x46
-        response. If this times out, Phase 1 BLE captures are needed to
-        identify the correct trigger command.
+        Sends a REQUEST with param 0x27 which triggers a SCHEDULE_CONFIG (0x46)
+        response containing 24 hourly time slots.
 
         Args:
             _experimental: Must be True to use this function
@@ -646,7 +644,7 @@ class VisionAirClient:
         await self._client.start_notify(self._status_char, handler)
         try:
             await self._client.write_gatt_char(
-                self._command_char, build_full_data_request(), response=True
+                self._command_char, build_schedule_config_request(), response=True
             )
             await asyncio.wait_for(event.wait(), timeout=timeout)
         finally:
@@ -666,29 +664,43 @@ class VisionAirClient:
         config: ScheduleConfig,
         *,
         _experimental: bool = False,
+        timeout: float = 10.0,
     ) -> None:
         """Write a schedule configuration to the device.
 
-        Sends a 0x40 schedule config write packet. The device acknowledgment
-        pattern is not yet known, so this method writes the packet and returns
-        without waiting for confirmation.
+        Sends a 0x40 schedule config write packet and waits for the device
+        to acknowledge with a SETTINGS_ACK (0x23) response.
 
         Args:
             config: ScheduleConfig with exactly 24 slots
             _experimental: Must be True to use this function
+            timeout: How long to wait for acknowledgment in seconds
 
         Raises:
             ExperimentalFeatureError: If _experimental is not True
             ValueError: If config is invalid
+            TimeoutError: If no acknowledgment received
         """
         _require_experimental(_experimental, "Schedule write")
         self._find_characteristics()
 
         packet = build_schedule_write(config, _experimental=True)
 
-        await self._client.write_gatt_char(
-            self._command_char, packet, response=True
-        )
+        ack_received = asyncio.Event()
+
+        def handler(*args: Any) -> None:
+            data = args[-1]
+            if bytes(data[:2]) == MAGIC and data[2] == PacketType.SETTINGS_ACK:
+                ack_received.set()
+
+        await self._client.start_notify(self._status_char, handler)
+        try:
+            await self._client.write_gatt_char(
+                self._command_char, packet, response=True
+            )
+            await asyncio.wait_for(ack_received.wait(), timeout=timeout)
+        finally:
+            await self._client.stop_notify(self._status_char)
 
     @property
     def last_status(self) -> DeviceStatus | None:

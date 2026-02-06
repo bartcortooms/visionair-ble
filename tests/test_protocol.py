@@ -19,6 +19,8 @@ from visionair_ble.protocol import (
     build_holiday_command,
     build_holiday_status_query,
     build_night_ventilation_activate,
+    build_schedule_config_request,
+    build_schedule_toggle,
     build_schedule_write,
     build_sensor_select_request,
     build_settings_packet,
@@ -364,8 +366,8 @@ class TestScheduleModeBytes:
     def test_medium_mode_byte(self):
         assert SCHEDULE_MODE_BYTES[AirflowLevel.MEDIUM] == 0x32
 
-    def test_high_not_in_mode_bytes(self):
-        assert AirflowLevel.HIGH not in SCHEDULE_MODE_BYTES
+    def test_high_mode_byte(self):
+        assert SCHEDULE_MODE_BYTES[AirflowLevel.HIGH] == 0x3C
 
 
 class TestScheduleSlot:
@@ -383,18 +385,24 @@ class TestScheduleSlot:
         assert slot.mode_byte == 0x32
         assert slot.airflow_mode == "medium"
 
-    def test_from_mode_high_raises(self):
-        with pytest.raises(ValueError, match="HIGH"):
-            ScheduleSlot.from_mode(16, AirflowLevel.HIGH)
+    def test_from_mode_high(self):
+        slot = ScheduleSlot.from_mode(16, AirflowLevel.HIGH)
+        assert slot.preheat_temp == 16
+        assert slot.mode_byte == 0x3C
+        assert slot.airflow_mode == "high"
 
     def test_from_mode_invalid_raises(self):
         with pytest.raises(ValueError, match="Invalid airflow level"):
             ScheduleSlot.from_mode(16, 99)
 
     def test_unknown_mode_byte(self):
-        slot = ScheduleSlot(preheat_temp=16, mode_byte=0x3C)
+        slot = ScheduleSlot(preheat_temp=16, mode_byte=0xFF)
         assert slot.airflow_mode == "unknown"
-        assert slot.mode_byte == 0x3C
+        assert slot.mode_byte == 0xFF
+
+    def test_high_mode_byte(self):
+        slot = ScheduleSlot(preheat_temp=16, mode_byte=0x3C)
+        assert slot.airflow_mode == "high"
 
     def test_raw_construction(self):
         slot = ScheduleSlot(preheat_temp=20, mode_byte=0x28)
@@ -446,16 +454,20 @@ class TestBuildScheduleWrite:
         with pytest.raises(ValueError, match="24 slots"):
             build_schedule_write(config, _experimental=True)
 
-    def test_preserves_unknown_mode_bytes(self):
-        """Unknown mode bytes (e.g., HIGH) are written as-is for round-trip."""
+    def test_preserves_all_mode_bytes(self):
+        """All mode bytes including unknown ones are written as-is for round-trip."""
         slots = [ScheduleSlot(16, 0x28)] * 24
-        slots[5] = ScheduleSlot(16, 0x3C)  # Unknown mode byte
+        slots[5] = ScheduleSlot(16, 0x3C)  # HIGH
+        slots[6] = ScheduleSlot(16, 0xFF)  # Unknown mode byte
         config = ScheduleConfig(slots=slots)
         packet = build_schedule_write(config, _experimental=True)
 
-        # Hour 5 slot at offset 6 + 5*2 = 16
+        # Hour 5 at offset 6 + 5*2 = 16
         assert packet[16] == 0x10  # 16C
-        assert packet[17] == 0x3C  # Unknown mode preserved
+        assert packet[17] == 0x3C  # HIGH preserved
+        # Hour 6 at offset 6 + 6*2 = 18
+        assert packet[18] == 0x10  # 16C
+        assert packet[19] == 0xFF  # Unknown preserved
         assert verify_checksum(packet)
 
 
@@ -501,13 +513,22 @@ class TestParseScheduleConfig:
         # Other slots unchanged
         assert config.slots[0].airflow_mode == "low"
 
-    def test_parse_unknown_mode_byte(self):
+    def test_parse_high_mode_byte(self):
         slots = [(16, 0x28)] * 24
-        slots[5] = (16, 0x3C)  # Unknown mode
+        slots[5] = (16, 0x3C)  # HIGH
         packet = self._make_packet(slots)
         config = parse_schedule_config(packet)
 
         assert config.slots[5].mode_byte == 0x3C
+        assert config.slots[5].airflow_mode == "high"
+
+    def test_parse_unknown_mode_byte(self):
+        slots = [(16, 0x28)] * 24
+        slots[5] = (16, 0xFF)  # Truly unknown mode
+        packet = self._make_packet(slots)
+        config = parse_schedule_config(packet)
+
+        assert config.slots[5].mode_byte == 0xFF
         assert config.slots[5].airflow_mode == "unknown"
 
     def test_parse_invalid_magic(self):
@@ -559,10 +580,10 @@ class TestScheduleRoundTrip:
         # Slot data (bytes 6-53) should match exactly
         assert packet[6:54] == rebuilt[6:54]
 
-    def test_round_trip_with_unknown_mode(self):
-        """Round-trip preserves unknown mode bytes."""
+    def test_round_trip_with_high_mode(self):
+        """Round-trip preserves HIGH mode bytes."""
         slots = [ScheduleSlot(16, 0x28)] * 24
-        slots[10] = ScheduleSlot(20, 0x3C)  # Unknown HIGH?
+        slots[10] = ScheduleSlot(20, 0x3C)  # HIGH
         original = ScheduleConfig(slots=slots)
 
         packet = build_schedule_write(original, _experimental=True)
@@ -575,7 +596,136 @@ class TestScheduleRoundTrip:
 
         parsed = parse_schedule_config(bytes(response))
         assert parsed.slots[10].mode_byte == 0x3C
-        assert parsed.slots[10].airflow_mode == "unknown"
+        assert parsed.slots[10].airflow_mode == "high"
 
         rebuilt = build_schedule_write(parsed, _experimental=True)
         assert packet[6:54] == rebuilt[6:54]
+
+
+class TestBuildScheduleConfigRequest:
+    """Tests for schedule config request packet."""
+
+    def test_produces_valid_packet(self):
+        packet = build_schedule_config_request()
+        assert packet[:2] == MAGIC
+        assert packet[2] == 0x10  # REQUEST type
+        assert packet[5] == 0x27  # RequestParam.SCHEDULE_CONFIG
+        assert verify_checksum(packet)
+
+    def test_length(self):
+        packet = build_schedule_config_request()
+        assert len(packet) == 11
+
+
+class TestBuildScheduleToggle:
+    """Tests for schedule toggle packet."""
+
+    def test_enable(self):
+        packet = build_schedule_toggle(True)
+        assert packet[:2] == MAGIC
+        assert packet[2] == 0x10  # REQUEST type
+        assert packet[5] == 0x1D  # RequestParam.SCHEDULE_TOGGLE
+        assert packet[9] == 1  # value=1 (ON)
+        assert verify_checksum(packet)
+
+    def test_disable(self):
+        packet = build_schedule_toggle(False)
+        assert packet[:2] == MAGIC
+        assert packet[5] == 0x1D
+        assert packet[9] == 0  # value=0 (OFF)
+        assert verify_checksum(packet)
+
+
+class TestScheduleCapturedData:
+    """Tests against real BLE capture data from controlled VMI sessions."""
+
+    # Run 4: Changed hour 0 from LOW to MEDIUM
+    RUN4_WRITE = bytes.fromhex(
+        "a5b64006310010321028102810281028102810281028102810321032"
+        "103210321032103210321032103210281028102810281028102877"
+    )
+
+    # Run 5: Changed hour 0 from MEDIUM to HIGH
+    RUN5_WRITE = bytes.fromhex(
+        "a5b640063100103c1028102810281028102810281028102810321032"
+        "103210321032103210321032103210281028102810281028102879"
+    )
+
+    # Run 6: Changed hour 0 preheat from 16°C to 18°C (mode still HIGH)
+    RUN6_WRITE = bytes.fromhex(
+        "a5b640063100123c102810281028102810281028102810281032"
+        "10321032103210321032103210321032102810281028102810287b"
+    )
+
+    def test_run4_structure(self):
+        """Run 4 packet has correct structure."""
+        p = self.RUN4_WRITE
+        assert p[:2] == MAGIC
+        assert p[2] == PacketType.SCHEDULE_WRITE
+        assert p[3:6] == bytes([0x06, 0x31, 0x00])
+        assert len(p) == 55
+        assert verify_checksum(p)
+
+    def test_run4_hour0_medium(self):
+        """Run 4: hour 0 changed to MEDIUM (0x32) at 16°C."""
+        config = parse_schedule_config(self._to_response(self.RUN4_WRITE))
+        assert config.slots[0].preheat_temp == 16
+        assert config.slots[0].mode_byte == 0x32
+        assert config.slots[0].airflow_mode == "medium"
+
+    def test_run5_hour0_high(self):
+        """Run 5: hour 0 changed to HIGH (0x3C) at 16°C."""
+        config = parse_schedule_config(self._to_response(self.RUN5_WRITE))
+        assert config.slots[0].preheat_temp == 16
+        assert config.slots[0].mode_byte == 0x3C
+        assert config.slots[0].airflow_mode == "high"
+
+    def test_run6_preheat_18c(self):
+        """Run 6: hour 0 preheat changed to 18°C, mode still HIGH."""
+        config = parse_schedule_config(self._to_response(self.RUN6_WRITE))
+        assert config.slots[0].preheat_temp == 18
+        assert config.slots[0].mode_byte == 0x3C
+        assert config.slots[0].airflow_mode == "high"
+
+    def test_run4_rebuild_matches(self):
+        """Rebuilding from parsed Run 4 data produces identical slot bytes."""
+        config = parse_schedule_config(self._to_response(self.RUN4_WRITE))
+        rebuilt = build_schedule_write(config, _experimental=True)
+        assert rebuilt[6:54] == self.RUN4_WRITE[6:54]
+
+    def test_run5_rebuild_matches(self):
+        """Rebuilding from parsed Run 5 data produces identical slot bytes."""
+        config = parse_schedule_config(self._to_response(self.RUN5_WRITE))
+        rebuilt = build_schedule_write(config, _experimental=True)
+        assert rebuilt[6:54] == self.RUN5_WRITE[6:54]
+
+    def test_default_schedule_pattern(self):
+        """All three captures share the same default schedule pattern.
+
+        Hours 1-8: LOW (0x28) at 16°C
+        Hours 9-17: MEDIUM (0x32) at 16°C
+        Hours 18-23: LOW (0x28) at 16°C
+        Hour 0: varies per run (the one we changed)
+        """
+        config = parse_schedule_config(self._to_response(self.RUN4_WRITE))
+        # Hours 1-8 are LOW
+        for h in range(1, 9):
+            assert config.slots[h].mode_byte == 0x28, f"hour {h}"
+            assert config.slots[h].preheat_temp == 16, f"hour {h}"
+        # Hours 9-17 are MEDIUM
+        for h in range(9, 18):
+            assert config.slots[h].mode_byte == 0x32, f"hour {h}"
+            assert config.slots[h].preheat_temp == 16, f"hour {h}"
+        # Hours 18-23 are LOW
+        for h in range(18, 24):
+            assert config.slots[h].mode_byte == 0x28, f"hour {h}"
+            assert config.slots[h].preheat_temp == 16, f"hour {h}"
+
+    def _to_response(self, write_packet: bytes) -> bytes:
+        """Convert a 0x40 write packet to a 0x46 response for parsing."""
+        response = bytearray(182)
+        response[0:2] = MAGIC
+        response[2] = PacketType.SCHEDULE_CONFIG
+        response[3:6] = write_packet[3:6]  # Header
+        response[6:54] = write_packet[6:54]  # Slot data
+        return bytes(response)

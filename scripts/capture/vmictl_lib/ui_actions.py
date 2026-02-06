@@ -18,23 +18,37 @@ class VMIUIActionsMixin:
             width, height = self.display_size()
             self.tap(int(width * 0.82), int(height * 0.165), delay=1.0)
 
-    def _dialog_button_tap(self, side: str, xml: str | None = None) -> bool:
+    def _find_dialog_card(self, xml: str | None = None) -> tuple[tuple[int, int, int, int], str] | None:
+        """Find the firmware update dialog card bounds and return (bounds, xml)."""
         if xml is None:
             xml = self.ui_dump()
-        card = None
         for node in self.nodes(xml):
-            if "embedded software" in node.desc.lower() and "update" in node.desc.lower():
-                card = node.bounds
-                break
-        if card is None:
-            return False
+            desc = node.desc.lower()
+            if "embedded software" in desc or "update" in desc or "firmware" in desc:
+                return node.bounds, xml
+        return None
 
+    def _dialog_button_tap(self, side: str, xml: str | None = None) -> bool:
+        result = self._find_dialog_card(xml)
+        if result is None:
+            return False
+        card, xml = result
+
+        # Try standard Button widgets first.
         buttons: list[Node] = []
         for node in self.nodes(xml):
             if not node.clickable or node.cls != "android.widget.Button":
                 continue
             if self._within(card, node.bounds):
                 buttons.append(node)
+
+        # Fall back to any clickable node within the dialog card.
+        if not buttons:
+            for node in self.nodes(xml):
+                if not node.clickable:
+                    continue
+                if self._within(card, node.bounds):
+                    buttons.append(node)
 
         if not buttons:
             return False
@@ -44,13 +58,29 @@ class VMIUIActionsMixin:
         self.tap(x, y, delay=1.0)
         return True
 
+    def _dialog_close_coordinate_fallback(self) -> None:
+        """Tap the firmware dialog Close/X button by coordinate.
+
+        The X button is typically near the top-center of the dialog.
+        Known bounds on 1080x2340: [356,1159][503,1306], center (430,1233).
+        Scale relative to detected display resolution.
+        """
+        width, height = self.display_size()
+        x = int(width * 0.398)
+        y = int(height * 0.527)
+        self.tap(x, y, delay=1.0)
+
     def dismiss_dialog(self) -> None:
         if not self.has_selector("dialog_firmware_prompt"):
             return
         try:
             self.tap_by_selector("dialog_firmware_close", max_scrolls=0)
+            return
         except RuntimeError:
-            self._dialog_button_tap("left")
+            pass
+        if self._dialog_button_tap("left"):
+            return
+        self._dialog_close_coordinate_fallback()
 
     def accept_firmware_update(self) -> None:
         if not self.has_selector("dialog_firmware_prompt"):
@@ -116,3 +146,31 @@ class VMIUIActionsMixin:
         from_x = x_left + int(span * (from_pct / 100.0))
         to_x = x_left + int(span * (to_pct / 100.0))
         self.swipe(from_x, y, to_x, y, duration_ms=450)
+
+    def schedule_tab(self, tab: str) -> None:
+        self.nav("time-slots")
+        selector = {
+            "edition": "schedule_tab_edition",
+            "planning": "schedule_tab_planning",
+        }.get(tab)
+        if not selector:
+            raise RuntimeError(f"invalid schedule tab: {tab}")
+        self.tap_by_selector(selector, max_scrolls=0)
+
+    def schedule_hour(self, hour: int, *, max_scrolls: int = 4) -> None:
+        if hour < 0 or hour > 23:
+            raise RuntimeError("schedule hour must be between 0 and 23")
+
+        self.nav("time-slots")
+        label = f"{hour}h"
+        for _ in range(max_scrolls + 1):
+            xml = self.ui_dump()
+            node = self._find_by_labels([label], xml, require_clickable=True)
+            if not node:
+                node = self._find_by_labels([label], xml, require_clickable=False)
+            if node:
+                x, y = node.center
+                self.tap(x, y)
+                return
+            self.swipe(540, 1900, 540, 780)
+        raise RuntimeError(f"schedule hour row not found: {label}")

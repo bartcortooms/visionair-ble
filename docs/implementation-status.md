@@ -16,9 +16,11 @@ This document tracks which protocol features from [protocol.md](protocol.md) are
 | Holiday Status Query (0x10, param 0x2c) | Yes | Yes | `build_holiday_status_query()` |
 | Night Ventilation (0x1a, byte7=0x04) — hypothetical | Partial | Experimental | `build_night_ventilation_activate()` — [#6](https://github.com/bartcortooms/visionair-ble/issues/6) |
 | Fixed Air Flow (0x1a, byte7=0x04) — hypothetical | Partial | Experimental | `build_fixed_airflow_activate()` — packet captured ([#7](https://github.com/bartcortooms/visionair-ble/issues/7)) but protocol path uncertain ([#14](https://github.com/bartcortooms/visionair-ble/issues/14)) |
-| Schedule Config Write (0x40) | Experimental | Experimental | `build_schedule_write()`, `VisionAirClient.set_schedule()` — [#2](https://github.com/bartcortooms/visionair-ble/issues/2) |
-| Schedule Config Read (0x46) | Experimental | Experimental | `parse_schedule_config()`, `VisionAirClient.get_schedule()` — [#2](https://github.com/bartcortooms/visionair-ble/issues/2) |
-| Schedule Query (0x47) | Experimental | No | Direction/structure unclear — [#2](https://github.com/bartcortooms/visionair-ble/issues/2) |
+| Schedule Config Request (0x10, param 0x27) | Yes | Yes | `build_schedule_config_request()` — [#2](https://github.com/bartcortooms/visionair-ble/issues/2) |
+| Schedule Toggle (0x10, param 0x1d) | Yes | Yes | `build_schedule_toggle()` — [#2](https://github.com/bartcortooms/visionair-ble/issues/2) |
+| Schedule Config Write (0x40) | Yes | Experimental | `build_schedule_write()`, `VisionAirClient.set_schedule()` — [#2](https://github.com/bartcortooms/visionair-ble/issues/2) |
+| Schedule Config Read (0x46) | Yes | Experimental | `parse_schedule_config()`, `VisionAirClient.get_schedule()` — [#2](https://github.com/bartcortooms/visionair-ble/issues/2) |
+| Schedule Query (0x47) | Partial | No | Triggered by param 0x26, structure unclear — [#2](https://github.com/bartcortooms/visionair-ble/issues/2) |
 | Schedule Command (0x1a, byte7=0x05) | Partial | No | — [#2](https://github.com/bartcortooms/visionair-ble/issues/2) |
 
 ## Responses (Notification Parsing)
@@ -30,7 +32,7 @@ This document tracks which protocol features from [protocol.md](protocol.md) are
 | Status - bypass state | Partial | No | — [#5](https://github.com/bartcortooms/visionair-ble/issues/5) |
 | Sensor/History (0x03) | Yes | Yes | `parse_sensors()` |
 | Schedule (0x02) - current time | Yes | No | — [#2](https://github.com/bartcortooms/visionair-ble/issues/2) |
-| Schedule Config Response (0x46) | Experimental | Experimental | `parse_schedule_config()` — needs e2e verification |
+| Schedule Config Response (0x46) | Yes | Experimental | `parse_schedule_config()` — validated against real captures |
 | Settings Ack (0x23) | Partial | No | — |
 | Status - holiday_days (byte 43) | Yes | Yes | `parse_status()` → `DeviceStatus.holiday_days` |
 | Holiday Status (0x50) | Partial | No | Constant response, not useful for state |
@@ -43,7 +45,7 @@ This document tracks which protocol features from [protocol.md](protocol.md) are
 | `SensorData` dataclass | Yes | Yes | Live sensor readings |
 | `ScheduleSlot` dataclass | Yes | Yes | Per-hour schedule slot (preheat temp + mode) |
 | `ScheduleConfig` dataclass | Yes | Yes | 24-hour schedule (list of slots) |
-| Schedule mode byte mapping | Partial | Yes | LOW=0x28, MEDIUM=0x32, HIGH=unknown |
+| Schedule mode byte mapping | Yes | Yes | LOW=0x28, MEDIUM=0x32, HIGH=0x3C |
 | Airflow mode mapping | Yes | Yes | LOW/MEDIUM/HIGH — byte meaning unknown |
 | Volume-based calculation | Yes | Yes | ACH multipliers |
 | Sensor metadata for HA | Yes | Yes | Auto-discovery support |
@@ -58,19 +60,18 @@ Features marked "Experimental" require `_experimental=True` flag to use. They ha
   - May require different preceding queries or internal state
 
 - **Schedule Config (0x40, 0x46)** — Implemented as experimental (`_experimental=True` required):
-  - `build_schedule_write()` / `set_schedule()`: Builds 0x40 packet (55 bytes, 24 slots)
-  - `parse_schedule_config()` / `get_schedule()`: Parses 0x46 response (182 bytes)
+  - `build_schedule_write()` / `set_schedule()`: Builds 0x40 packet, device responds with SETTINGS_ACK
+  - `parse_schedule_config()` / `get_schedule()`: Parses 0x46 response, triggered by REQUEST param 0x27
+  - `build_schedule_config_request()`: Sends REQUEST param 0x27 to get current schedule
+  - `build_schedule_toggle()`: Sends REQUEST param 0x1D to enable/disable time slots
   - `ScheduleSlot` / `ScheduleConfig`: Data structures for schedule representation
-  - Unknown: HIGH mode byte, 0x47 trigger/purpose, device ack after 0x40 write
-  - Unknown: Whether Full Data Request triggers 0x46 (or if a separate command is needed)
-  - Needs: controlled VMI capture session (issue #2, Phase 1) for e2e verification
+  - Mode bytes: LOW=0x28, MEDIUM=0x32, HIGH=0x3C (all three verified via captures)
+  - Needs: e2e test verification (Phases 1-2 complete)
 
 ## Needs Verification
 
 Features that need more data before implementing:
 
 - **Diagnostic bitfield (byte 54)** — Only value 0x0F (all healthy) observed. Bit-to-component mapping is assumed based on UI order. Need a device with a faulty component to verify.
-
-- **Schedule Mode 3 (HIGH)** — Byte value not captured. Only Mode 1 (0x28) and Mode 2 (0x32) observed.
 
 - **Airflow setting bytes** — The byte pairs (0x19/0x0A, 0x28/0x15, 0x07/0x30) work for LOW/MEDIUM/HIGH but their actual meaning (PWM? calibration?) is unknown.

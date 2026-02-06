@@ -151,7 +151,7 @@ class VMICtl:
 
     def launch(self) -> None:
         print("Launching VMI+ app...")
-        self.adb_shell("am", "force-stop", "com.ventilairsec.ventilairsecinstallateur", check=False)
+        self.stop()
         time.sleep(1)
         self.adb_run(
             "shell",
@@ -164,6 +164,10 @@ class VMICtl:
         )
         time.sleep(3)
         self.screenshot("/tmp/vmi_01_home.png")
+
+    def stop(self) -> None:
+        print("Stopping VMI+ app...")
+        self.adb_shell("am", "force-stop", "com.ventilairsec.ventilairsecinstallateur", check=False)
 
     def connect(self) -> None:
         print("=== Full VMI Connect Sequence ===")

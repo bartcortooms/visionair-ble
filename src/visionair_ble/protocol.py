@@ -149,6 +149,9 @@ class RequestParam:
     SENSOR_SELECT = 0x18        # Set sensor cycle
     BOOST = 0x19                # Activate BOOST
     HOLIDAY = 0x1A              # Set holiday days (byte 9 = days, 0=OFF)
+    SCHEDULE_TOGGLE = 0x1D      # Toggle time slots on/off (value: 0=OFF, 1=ON)
+    SCHEDULE_QUERY = 0x26       # Request schedule query (triggers 0x47 response)
+    SCHEDULE_CONFIG = 0x27      # Request schedule config (triggers 0x46 response)
     HOLIDAY_STATUS = 0x2C       # Query holiday mode status
 
 
@@ -271,7 +274,7 @@ AIRFLOW_INDICATOR: dict[int, int] = {
 SCHEDULE_MODE_BYTES: dict[int, int] = {
     AirflowLevel.LOW: 0x28,
     AirflowLevel.MEDIUM: 0x32,
-    # AirflowLevel.HIGH: unknown -- not captured yet
+    AirflowLevel.HIGH: 0x3C,
 }
 
 SCHEDULE_MODE_LOOKUP: dict[int, int] = {v: k for k, v in SCHEDULE_MODE_BYTES.items()}
@@ -409,7 +412,7 @@ class ScheduleSlot:
     """
 
     preheat_temp: int  # Preheat temperature in degrees C
-    mode_byte: int     # Raw protocol mode byte (0x28=LOW, 0x32=MEDIUM)
+    mode_byte: int     # Raw protocol mode byte (0x28=LOW, 0x32=MEDIUM, 0x3c=HIGH)
 
     @property
     def airflow_mode(self) -> str:
@@ -427,20 +430,14 @@ class ScheduleSlot:
     def from_mode(cls, preheat_temp: int, airflow: int) -> "ScheduleSlot":
         """Create a slot from an AirflowLevel value.
 
-        Only LOW and MEDIUM are supported (HIGH mode byte is unknown).
-
         Args:
             preheat_temp: Preheat temperature in degrees C
-            airflow: AirflowLevel.LOW or AirflowLevel.MEDIUM
+            airflow: AirflowLevel.LOW, MEDIUM, or HIGH
 
         Raises:
-            ValueError: If airflow is HIGH (unknown byte) or invalid
+            ValueError: If airflow is not a valid AirflowLevel
         """
         if airflow not in SCHEDULE_MODE_BYTES:
-            if airflow == AirflowLevel.HIGH:
-                raise ValueError(
-                    "HIGH airflow mode byte for schedule slots is unknown"
-                )
             raise ValueError(f"Invalid airflow level: {airflow}")
         return cls(preheat_temp=preheat_temp, mode_byte=SCHEDULE_MODE_BYTES[airflow])
 
@@ -715,6 +712,31 @@ def build_fixed_airflow_activate(
     """
     _raise_special_mode_unsupported("Fixed Air Flow mode", _experimental=_experimental)
     return b""
+
+
+def build_schedule_config_request() -> bytes:
+    """Build a request to read the schedule configuration.
+
+    Triggers a SCHEDULE_CONFIG (0x46) response with 24 hourly slots.
+
+    Returns:
+        Complete packet bytes
+    """
+    return build_request(RequestParam.SCHEDULE_CONFIG, extended=True)
+
+
+def build_schedule_toggle(enable: bool) -> bytes:
+    """Build a request to enable or disable time slot scheduling.
+
+    Args:
+        enable: True to enable time slots, False to disable
+
+    Returns:
+        Complete packet bytes
+    """
+    return build_request(
+        RequestParam.SCHEDULE_TOGGLE, value=1 if enable else 0, extended=True
+    )
 
 
 def build_schedule_write(

@@ -64,6 +64,12 @@ labels = ["Time slot configuration"]
 [selectors.configuration_simplified]
 labels = ["Simplified configuration", "Simplified"]
 
+[selectors.schedule_tab_edition]
+labels = ["EDITION", "Edition"]
+
+[selectors.schedule_tab_planning]
+labels = ["PLANNING", "Planning"]
+
 [selectors.sensor_probe1]
 labels = ["Probe N°1", "Probe 1", "Probe1", "Outlet"]
 
@@ -80,10 +86,10 @@ labels = ["VMCI"]
 labels = ["PAIR", "Pair"]
 
 [selectors.dialog_firmware_prompt]
-labels = ["embedded software", "Update?"]
+labels = ["embedded software", "Update?", "firmware"]
 
 [selectors.dialog_firmware_close]
-labels = ["Close"]
+labels = ["Close", "close", "Fermer", "dismiss"]
 
 [selectors.dialog_firmware_validate]
 labels = ["Validate"]

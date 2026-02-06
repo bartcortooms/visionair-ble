@@ -245,15 +245,37 @@ SETTINGS_ACK (0x23). This differs from SETTINGS commands.
 
 ### 4.4 Schedule Commands
 
+#### Schedule Config Request (type 0x10, param 0x27)
+
+Requests the current schedule configuration. The device responds with a
+Schedule Config Response (type 0x46).
+
+```
+a5b6 10 06 05 27 00 00 00 00 30
+```
+
+> **Verified (2026-02-06):** Confirmed via controlled capture sessions.
+> REQUEST param 0x27 reliably triggers a 0x46 response.
+
+#### Schedule Toggle (type 0x10, param 0x1d)
+
+Enables or disables the "Activating time slots" feature. Byte 9 carries the
+value: 0=OFF, 1=ON. The device responds with an UNKNOWN_05 packet.
+
+| Command | Packet | Description |
+|---------|--------|-------------|
+| Schedule ON | `a5b610060500001d010b` | Enable time slots |
+| Schedule OFF | `a5b610060500001d000a` | Disable time slots |
+
+> **Verified (2026-02-06):** Observed in controlled captures (Runs 2-3).
+> Toggle ON/OFF confirmed with immediate state change.
+
 #### Schedule Config Write (type 0x40)
 
-> **Experimental:** Observed in captures but not yet verified via e2e tests
-> or controlled VMI app reverse engineering. Structure is high-confidence
-> (ATT framing confirmed, XOR checksum valid), but behavioral details
-> (e.g. device response, required preconditions) are unverified.
+Writes the full 24-hour schedule configuration to the device. The device
+responds with SETTINGS_ACK (type 0x23) within ~200ms.
 
-Writes schedule configuration to the device. Same slot encoding as the
-Schedule Config response (type 0x46), but sent as a 55-byte command.
+The app sends the full 24-hour schedule on every single-slot change.
 
 ```
 a5b6 40 06 31 00 <24 x 2-byte slots> <checksum>
@@ -271,46 +293,48 @@ Each slot is 2 bytes:
 
 | Byte | Description |
 |------|-------------|
-| 1 | Preheat temperature (°C), e.g., 0x10 = 16°C |
+| 1 | Preheat temperature (°C), raw value (e.g., 0x10 = 16°C, 0x12 = 18°C) |
 | 2 | Mode byte |
 
 **Mode byte values:**
 
-| Mode | Byte | Airflow |
-|------|------|---------|
-| Mode 1 | 0x28 (40) | LOW |
-| Mode 2 | 0x32 (50) | MEDIUM |
-| Mode 3 | ? | HIGH (not captured) |
+| Mode | Byte | Decimal | Airflow |
+|------|------|---------|---------|
+| Mode 1 | 0x28 | 40 | LOW |
+| Mode 2 | 0x32 | 50 | MEDIUM |
+| Mode 3 | 0x3C | 60 | HIGH |
 
-**Example** (hour 1 set to MEDIUM, rest LOW):
+> **Note:** The decimal values follow a regular 40/50/60 pattern, unlike the
+> settings airflow bytes which use unrelated two-byte pairs.
+
+**Example** (hour 0 set to HIGH at 18°C, hours 1-8 LOW, 9-17 MEDIUM, 18-23 LOW):
 ```
-a5b6 40 06 31 00 1028 1032 1028 1028 1028 1028 1028 1028
-                  1032 1032 1032 1032 1032 1032 1032 1032
-                  1032 1028 1028 1028 1028 1028 1028 77
+a5b6 40 06 31 00 123c 1028 1028 1028 1028 1028 1028 1028
+                  1028 1032 1032 1032 1032 1032 1032 1032
+                  1032 1032 1028 1028 1028 1028 1028 7b
 ```
 
-> **Discovered (2026-02-06):** First observed in Feb 5 captures during
-> schedule editing. Verified via ATT framing as a real command (written to
-> handle 0x0013). XOR checksum confirmed valid.
+> **Verified (2026-02-06):** Confirmed via controlled capture sessions (Runs 4-6).
+> All three mode bytes captured and verified. Device responds with SETTINGS_ACK.
 
 #### Schedule Config Response (type 0x46)
 
-> **Experimental:** Observed in captures but not yet verified via e2e tests.
-
 The device's response containing current schedule configuration. Same slot
-format as 0x40, padded to 182 bytes with zeros.
+format as 0x40, padded to 182 bytes with zeros. Triggered by REQUEST param 0x27.
 
 ```
 a5b6 46 06 31 00 <slot_data...> <checksum> <zero padding to 182 bytes>
 ```
 
+> **Verified (2026-02-06):** Parse validated against real device responses.
+
 #### Schedule Query (type 0x47)
+
+Triggered by REQUEST param 0x26. Structure not fully understood.
 
 ```
 a5b6 47 06 18 00 08 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 51
 ```
-
-Query or acknowledgment packet for schedule operations.
 
 ## 5. Response Reference
 
@@ -324,9 +348,9 @@ Responses arrive as notifications on characteristic handle 0x000e. Subscribe by 
 | `0x02` | 182 bytes | Schedule (time slot configuration) |
 | `0x03` | 182 bytes | Probe Sensors (current probe readings) |
 | `0x23` | 182 bytes | Settings acknowledgment |
-| `0x40` | 55 bytes | Schedule Config Write (experimental) |
-| `0x46` | 182 bytes | Schedule Config Response (experimental) |
-| `0x47` | 26 bytes | Schedule Query (experimental) |
+| `0x40` | 55 bytes | Schedule Config Write |
+| `0x46` | 182 bytes | Schedule Config Response |
+| `0x47` | 26 bytes | Schedule Query |
 | `0x50` | varies | Holiday status (constant, not useful — use byte 43) |
 
 ### 5.1 Device State Packet (type 0x01)
@@ -535,9 +559,8 @@ See [implementation-status.md](implementation-status.md) for feature implementat
 - Fixed Air Flow packet mapping and encoding
 
 **Schedule:**
-- Schedule Mode 3 (HIGH) byte value — not captured
-- Schedule Response fields (bytes 8-10, 15) — marked with "?"
-- How to enable/disable "Activating time slots" toggle
+- Schedule Response (0x02) fields (bytes 8-10, 15) — marked with "?"
+- Schedule Query (0x47) full structure — triggered by param 0x26 but purpose unclear
 
 **Status/Sensors:**
 - Bypass state encoding (weather dependent)
