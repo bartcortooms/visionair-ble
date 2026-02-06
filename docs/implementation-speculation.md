@@ -100,17 +100,22 @@ BLE GATT doesn't need this — packets are already framed by the protocol. Inclu
 3. **BLE_gatt.c generated file** — Contains UUID definitions in `cyBle_attUuid128[][16u]` array
 4. **Firmware updates** — If the device supports OTA, the update format might reveal more
 
-### 5. RTC Implementation (legacy special-mode hypothesis)
+### 5. RTC Implementation (superseded legacy hypothesis)
 
-Older captures suggested special-mode commands might include HH:MM:SS values.
-The PSoC BLE RTC example (Day033) still provides useful background:
+Early captures suggested special-mode commands (byte7=0x04 SETTINGS packets) might
+include HH:MM:SS values. This hypothesis has been **superseded**: controlled captures
+(2026) show Holiday control uses `REQUEST 0x1a` value packets, not time-encoded
+SETTINGS packets.
+
+The PSoC BLE RTC example (Day033) provides general background on how the device
+may keep time internally:
 
 - PSoC uses **Watchdog Timer** for 1-second interrupts to maintain time
 - The `CYBLE_CTS_CURRENT_TIME_T` struct stores hours, minutes, seconds
 - Time sync from app is common because low-power devices lack battery-backed RTC
 
-This could explain time-coupled mode handling if that command path is still present.
-Recent controlled captures show Holiday control via `REQUEST 0x1a` value packets instead.
+This is retained as reference for understanding the device's timekeeping, not as
+an explanation of the Holiday/special-mode command protocol.
 
 ### 6. BLE Event Handler Pattern
 

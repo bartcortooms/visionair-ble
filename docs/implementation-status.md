@@ -13,10 +13,10 @@ This document tracks which protocol features from [protocol.md](protocol.md) are
 | BOOST ON/OFF (0x10, param 0x19) | Yes | Yes | `build_boost_command()` |
 | Settings (0x1a) - airflow/preheat/summer | Yes | Yes | `build_settings_packet()` |
 | Holiday Value Request (0x10, param 0x1a) | Yes | Experimental | `build_request_1a()` |
-| Holiday Activate (0x1a, byte7=0x04) | Partial | Experimental | `build_holiday_activate()` (unsupported until encoding known) |
+| Holiday Activate (0x1a, byte7=0x04) — hypothetical | Partial | Experimental | `build_holiday_activate()` (SETTINGS-based; not observed in current captures) |
 | Holiday Status Query (0x10, param 0x2c) | Yes | Yes | `build_holiday_status_query()` |
-| Night Ventilation (0x1a, byte7=0x04) | Partial | Experimental | `build_night_ventilation_activate()` (unsupported until encoding known) |
-| Fixed Air Flow (0x1a, byte7=0x04) | Partial | Experimental | `build_fixed_airflow_activate()` (unsupported until encoding known) |
+| Night Ventilation (0x1a, byte7=0x04) — hypothetical | Partial | Experimental | `build_night_ventilation_activate()` (SETTINGS-based; not observed in current captures) |
+| Fixed Air Flow (0x1a, byte7=0x04) — hypothetical | Partial | Experimental | `build_fixed_airflow_activate()` (SETTINGS-based; not observed in current captures) |
 | Schedule Config (0x46, 0x47) | Yes | No | — |
 | Schedule Command (0x1a, byte7=0x05) | Partial | No | — |
 
@@ -54,12 +54,12 @@ Features that are fully documented and ready for implementation:
 
 Features marked "Experimental" require `_experimental=True` flag to use. They have known gaps in protocol understanding:
 
-- **Holiday Mode** — Encoding for bytes 9-10 is time-dependent and unknown.
-  - In current VMI workflow, days/clear values are sent via Request `0x1a` (byte 9)
-  - OFF/clear (`0x00`) packet observed; distinct ON-activation packet still unconfirmed
+- **Holiday Mode**
+  - **Confirmed (partial):** Holiday day values and clear/off via REQUEST param `0x1a` (byte 9). This is the workflow observed in current VMI captures.
+  - **Unconfirmed:** SETTINGS packet with byte7=0x04 (legacy captures only). Encoding for bytes 8-10 is unknown; `build_holiday_activate()` models this hypothetical path.
 
-- **Night Ventilation / Fixed Air Flow** — Packet structure appears identical to Holiday mode:
-  - Packet mapping for these two modes is still unconfirmed in current captures
+- **Night Ventilation / Fixed Air Flow** — Hypothetical SETTINGS-based activation (byte7=0x04):
+  - Never observed in current captures; packet mapping is unconfirmed
   - We don't know how the device distinguishes between these three modes
   - May require different preceding queries or internal state
 

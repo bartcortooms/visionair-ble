@@ -543,6 +543,10 @@ def build_boost_command(enable: bool) -> bytes:
 # - Night Ventilation / Fixed Air Flow packet mapping
 # - Full decoding of Holiday status (type 0x50)
 #
+# Note: The SETTINGS-based special-mode builders below (byte7=0x04) model a
+# hypothetical activation path seen only in legacy captures. Current controlled
+# captures (2026) show Holiday control via REQUEST 0x1a, not SETTINGS packets.
+#
 # These functions require _experimental=True flag to acknowledge the risks.
 
 
@@ -597,7 +601,9 @@ def _raise_special_mode_unsupported(feature: str, *, _experimental: bool) -> Non
     _require_experimental(_experimental, feature)
     raise ExperimentalFeatureError(
         f"{feature} encoding is unknown. "
-        "Byte 8 is a sequence counter and bytes 9-10 are mode-specific. "
+        "In legacy captures, byte 8 appeared to be a sequence counter and "
+        "bytes 9-10 were mode-specific. This SETTINGS-based path (byte7=0x04) "
+        "has not been observed in current captures. "
         "We cannot generate valid packets without the encoding algorithm."
     )
 
@@ -605,10 +611,12 @@ def _raise_special_mode_unsupported(feature: str, *, _experimental: bool) -> Non
 def build_holiday_activate(
     days: int, preheat_enabled: bool = True, *, _experimental: bool = False
 ) -> list[bytes]:
-    """Build complete Holiday mode activation sequence.
+    """Build complete Holiday mode activation sequence (hypothetical SETTINGS path).
 
-    ⚠️  EXPERIMENTAL: The Holiday mode encoding is not known.
-    This function is intentionally unsupported until the algorithm is decoded.
+    ⚠️  EXPERIMENTAL: This models the SETTINGS-based activation (byte7=0x04) seen
+    only in legacy captures. Current Holiday workflow uses REQUEST param 0x1a
+    instead. This function is intentionally unsupported until the SETTINGS-based
+    encoding algorithm is decoded (if it is even still used by the device).
 
     Args:
         days: Number of days for Holiday mode (typically 1-30)
