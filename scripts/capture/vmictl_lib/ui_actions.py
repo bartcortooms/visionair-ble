@@ -172,5 +172,23 @@ class VMIUIActionsMixin:
                 x, y = node.center
                 self.tap(x, y)
                 return
-            self.swipe(540, 1900, 540, 780)
+            visible_hours: list[int] = []
+            for item in self.nodes(xml):
+                desc = item.desc.strip().lower()
+                if desc.endswith("h") and desc[:-1].isdigit():
+                    visible_hours.append(int(desc[:-1]))
+
+            if not visible_hours:
+                self.swipe(540, 1900, 540, 780)
+                continue
+
+            if hour < min(visible_hours):
+                # Scroll toward earlier hours.
+                self.swipe(540, 900, 540, 1900)
+            elif hour > max(visible_hours):
+                # Scroll toward later hours.
+                self.swipe(540, 1900, 540, 900)
+            else:
+                # In range but not found; nudge down the list and retry.
+                self.swipe(540, 1900, 540, 900)
         raise RuntimeError(f"schedule hour row not found: {label}")
