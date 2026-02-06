@@ -355,25 +355,17 @@ class DeviceStatus:
         "Operating days", unit="d", device_class="duration", state_class="total_increasing", enabled_default=False
     ))
 
-    # Sensors - settings (read-only display of current settings)
-    preheat_enabled: bool = field(default=False, metadata=sensor(
-        "Preheat enabled", enabled_default=False
-    ))
+    # Settings (exposed as interactive controls in HA, not as sensors)
+    preheat_enabled: bool = False
     preheat_temp: int = field(default=0, metadata=sensor(
         "Preheat setpoint", unit="°C", device_class="temperature", enabled_default=False, precision=0
     ))
-    summer_limit_enabled: bool = field(default=False, metadata=sensor(
-        "Summer limit enabled", enabled_default=False
-    ))
+    summer_limit_enabled: bool = False
     summer_limit_temp: int | None = field(default=None, metadata=sensor(
         "Summer limit setpoint", unit="°C", device_class="temperature", enabled_default=False, precision=0
     ))
-    boost_active: bool = field(default=False, metadata=sensor(
-        "Boost active", enabled_default=False
-    ))
-    holiday_days: int = field(default=0, metadata=sensor(
-        "Holiday days remaining", unit="d", device_class="duration", enabled_default=False
-    ))
+    boost_active: bool = False
+    holiday_days: int = 0
 
 
 
