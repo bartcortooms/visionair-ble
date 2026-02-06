@@ -12,7 +12,7 @@ This document tracks which protocol features from [protocol.md](protocol.md) are
 | Sensor Select Request (0x10, param 0x18) | Yes | Yes | `build_sensor_select_request(sensor)` — verified 2026-02-05 |
 | BOOST ON/OFF (0x10, param 0x19) | Yes | Yes | `build_boost_command()` |
 | Settings (0x1a) - airflow/preheat/summer | Yes | Yes | `build_settings_packet()` |
-| Holiday Command (0x10, param 0x1a) | Yes | Yes | `build_holiday_command(days)` |
+| Holiday Command (0x10, param 0x1a) | Yes | Yes | `build_holiday_command(days)`, `VisionAirClient.set_holiday()` / `clear_holiday()` |
 | Holiday Status Query (0x10, param 0x2c) | Yes | Yes | `build_holiday_status_query()` |
 | Night Ventilation (0x1a, byte7=0x04) — hypothetical | Partial | Experimental | `build_night_ventilation_activate()` (SETTINGS-based; not observed in current captures) |
 | Fixed Air Flow (0x1a, byte7=0x04) — hypothetical | Partial | Experimental | `build_fixed_airflow_activate()` (SETTINGS-based; not observed in current captures) |

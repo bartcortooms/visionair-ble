@@ -33,7 +33,7 @@ E2E tests require a real VisionAir device. Configuration is in `.env`:
 1. **Disable Home Assistant's BLE proxy integration** - HA must not be using the ESPHome proxy
 2. **Disconnect the phone** - Either disable Bluetooth on the phone (`adb shell svc bluetooth disable`) or force-stop the VMI app (`adb shell am force-stop com.ventilairsec.ventilairsecinstallateur`)
 
-The tests are read-only and do not modify device settings.
+Most tests are read-only. The holiday mode test (`TestHolidayMode`) briefly activates and then clears holiday mode, always cleaning up in a `finally` block.
 
 ## Code Style
 

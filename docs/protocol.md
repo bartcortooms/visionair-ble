@@ -204,14 +204,19 @@ Structure: `a5b6 1a 06 06 1a <preheat> <mode> <temp> <af1> <af2> <checksum>`
 | Holiday OFF | `a5b61006051a0000000009` | Disable holiday |
 
 Byte 9 carries the number of holiday days (0=OFF, 1-255=active). The device
-reflects this value immediately in DEVICE_STATE byte 43 (`holiday_days`).
+responds with a DEVICE_STATE packet (~130ms) reflecting the new value in
+byte 43 (`holiday_days`).
 
 **Reading holiday status:** Use DEVICE_STATE byte 43, not the 0x50 response.
 The 0x50 response (from `REQUEST` param `0x2c`) is constant and does not
 reflect holiday state.
 
-> Verified via controlled capture session `data/captures/issue12_final2_20260205_225506`.
+**Response type:** The device responds with DEVICE_STATE (0x01), not
+SETTINGS_ACK (0x23). This differs from SETTINGS commands.
+
+> Verified via controlled capture sessions on 2026-02-05 and 2026-02-06.
 > Byte 43 changes instantly to match the value sent and returns to 0 when cleared.
+> Values 0, 3, 5, 7 all confirmed across multiple captures and e2e tests.
 
 ### 4.3 Special Modes
 
