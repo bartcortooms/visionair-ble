@@ -46,6 +46,7 @@ async def main():
 
         # Other controls
         await visionair.set_boost(True)             # 30-min high airflow
+        await visionair.set_holiday(7)              # 7-day holiday mode
         await visionair.set_preheat(True, temperature=16)
         await visionair.set_summer_limit(True)
 
@@ -104,14 +105,25 @@ for address, name in devices:
 | `set_airflow_mode(mode)` | Set airflow to "low", "medium", or "high" |
 | `set_airflow_low/medium/high()` | Convenience methods for airflow control |
 | `set_boost(enable)` | Enable/disable 30-minute BOOST mode |
+| `set_holiday(days)` | Set holiday mode (0=OFF, 1-255=days) |
+| `clear_holiday()` | Disable holiday mode |
 | `set_preheat(enable, temperature)` | Control winter preheat |
 | `set_summer_limit(enable)` | Control summer limit |
 
+**Experimental** (require `_experimental=True`):
+
+| Method | Description |
+|--------|-------------|
+| `get_schedule()` | Read 24-hour time slot configuration |
+| `set_schedule(config)` | Write 24-hour time slot configuration |
+
 ### Data Classes
 
-**DeviceStatus** (from `get_status()`): Contains airflow settings, temperatures, humidity, filter life, and device configuration. Temperature readings may be cached.
+**DeviceStatus** (from `get_status()`): Contains airflow settings, temperatures, humidity, filter life, holiday mode, and device configuration. Temperature readings may be cached.
 
 **SensorData** (from `get_sensors()`): Contains fresh probe temperature and humidity readings.
+
+**ScheduleConfig** / **ScheduleSlot** (experimental): 24-hour schedule with per-slot airflow mode and preheat temperature.
 
 See [docs/protocol.md](docs/protocol.md) for complete field documentation.
 
