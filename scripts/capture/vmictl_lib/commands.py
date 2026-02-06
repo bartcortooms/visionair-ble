@@ -194,6 +194,11 @@ def _cmd_session_end(ctl: VMICtl, args: list[str]) -> int:
     return 0
 
 
+def _cmd_battery(ctl: VMICtl, args: list[str]) -> int:
+    ctl.check_battery()
+    return 0
+
+
 def _cmd_collect_sensors(ctl: VMICtl, args: list[str]) -> int:
     force = bool(args and args[0] == "--force")
     ctl.collect_sensors(force=force)
@@ -259,6 +264,7 @@ def get_command_specs() -> dict[str, CommandSpec]:
         CommandSpec("session-start", "Start capture session", _cmd_session_start),
         CommandSpec("session-checkpoint", "Take checkpoint screenshot", _cmd_session_checkpoint),
         CommandSpec("session-end", "End session and pull btsnoop", _cmd_session_end),
+        CommandSpec("battery", "Show phone battery level", _cmd_battery),
         CommandSpec("collect-sensors", "Collect timestamped sensor evidence session", _cmd_collect_sensors),
         CommandSpec("should-collect", "Check collection interval", _cmd_should_collect),
     ]

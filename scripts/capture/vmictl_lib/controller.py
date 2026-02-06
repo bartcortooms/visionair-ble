@@ -11,6 +11,10 @@ from .ui import VMIUI
 
 
 class VMICtl:
+    BATTERY_WARN_THRESHOLD = 20
+    BATTERY_CRITICAL_THRESHOLD = 10
+    BATTERY_CHECK_INTERVAL_MINUTES = 5
+
     def __init__(self, adb_target: str, project_root: Path) -> None:
         self.adb_target = adb_target
         self.project_root = project_root
@@ -20,6 +24,7 @@ class VMICtl:
         self.capture_data_dir.mkdir(parents=True, exist_ok=True)
         self.last_sensor_checkpoint_file = self.capture_data_dir / "last_sensor_checkpoint.txt"
         self.sensor_checkpoint_interval_minutes = 15
+        self._last_battery_check_file = self.capture_data_dir / "last_battery_check.txt"
 
     def _adb_base(self) -> list[str]:
         cmd = ["adb"]
@@ -264,6 +269,78 @@ class VMICtl:
 
         print(log_path)
         return log_path
+
+    # -- Battery monitoring --------------------------------------------------
+
+    def get_battery_info(self) -> dict[str, str]:
+        """Query phone battery via ``adb shell dumpsys battery``."""
+        raw = self.adb_shell("dumpsys", "battery")
+        info: dict[str, str] = {}
+        for line in raw.splitlines():
+            if ":" in line:
+                key, _, val = line.partition(":")
+                info[key.strip().lower()] = val.strip()
+        return info
+
+    def get_battery_level(self) -> int:
+        """Return battery percentage (0-100)."""
+        info = self.get_battery_info()
+        return int(info.get("level", "0"))
+
+    def check_battery(self) -> int:
+        """Print battery status.  Returns the level."""
+        info = self.get_battery_info()
+        level = int(info.get("level", "0"))
+        charging = info.get("ac powered") == "true" or info.get("usb powered") == "true"
+        status = f"Battery: {level}%"
+        if charging:
+            status += " (charging)"
+
+        if level <= self.BATTERY_CRITICAL_THRESHOLD and not charging:
+            print(f"\033[91m*** CRITICAL: {status} — phone may shut off! Charge it NOW. ***\033[0m")
+        elif level <= self.BATTERY_WARN_THRESHOLD and not charging:
+            print(f"\033[93m** WARNING: {status} — consider charging the phone soon. **\033[0m")
+        else:
+            print(status)
+        return level
+
+    def maybe_warn_battery(self) -> None:
+        """Periodic battery check — warns only when low, silent otherwise.
+
+        Runs at most once every ``BATTERY_CHECK_INTERVAL_MINUTES``.
+        """
+        now = int(time.time())
+        if self._last_battery_check_file.exists():
+            try:
+                last = int(self._last_battery_check_file.read_text(encoding="utf-8").strip())
+            except (ValueError, OSError):
+                last = 0
+            if (now - last) < (self.BATTERY_CHECK_INTERVAL_MINUTES * 60):
+                return
+
+        try:
+            info = self.get_battery_info()
+        except Exception:  # noqa: BLE001
+            return  # phone unreachable — skip silently
+        level = int(info.get("level", "0"))
+        charging = info.get("ac powered") == "true" or info.get("usb powered") == "true"
+
+        self._last_battery_check_file.write_text(str(now), encoding="utf-8")
+
+        if level <= self.BATTERY_CRITICAL_THRESHOLD and not charging:
+            print(
+                f"\033[91m*** BATTERY CRITICAL: {level}% — phone may shut off! "
+                f"Charge it NOW. ***\033[0m",
+                file=sys.stderr,
+            )
+        elif level <= self.BATTERY_WARN_THRESHOLD and not charging:
+            print(
+                f"\033[93m** BATTERY WARNING: {level}% — consider charging the "
+                f"phone soon. **\033[0m",
+                file=sys.stderr,
+            )
+
+    # -- Sensor collection ----------------------------------------------------
 
     def should_collect_sensors(self) -> bool:
         if not self.last_sensor_checkpoint_file.exists():

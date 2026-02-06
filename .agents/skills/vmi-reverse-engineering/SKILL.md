@@ -97,6 +97,7 @@ For phone setup, ADB connection, BT snoop logging details, and troubleshooting, 
 | `back` | Press back button |
 | `ui` | Dump UI hierarchy (XML) |
 | `resolution` | Show detected resolution |
+| `battery` | Show phone battery level and charging status |
 
 ### Bluetooth Capture
 | Command | Description |
@@ -178,6 +179,17 @@ When helping with reverse engineering:
 4. **Compare packets:** Use `--checkpoints` flag to correlate bytes with app values
 5. **Navigation:** Follow screen hierarchy - can't jump directly to submenus
 6. **Verify results:** Check screenshots in session directory
+
+### Phone Battery Monitoring
+
+The Fairphone used for reverse engineering is **not plugged in** and will eventually run out of battery. The `vmictl` script automatically checks battery level every 5 minutes and prints a warning to stderr when it's low.
+
+**You MUST relay battery warnings to the user.** When you see output containing `BATTERY WARNING` or `BATTERY CRITICAL` from any vmictl command:
+
+- **WARNING (<= 20%):** Immediately tell the user: *"The phone battery is at X% — it should be charged soon to avoid losing the session."*
+- **CRITICAL (<= 10%):** **Stop what you are doing** and alert the user: *"The phone battery is critically low (X%). It needs to be charged NOW or it will shut off and we'll lose BLE connectivity."*
+
+You can also check manually at any time with `./scripts/capture/vmictl.py battery`.
 
 ### Opportunistic Data Collection
 
