@@ -113,7 +113,7 @@ python scripts/capture/btsnooz.py /tmp/btsnooz_hci.log /tmp/btsnoop.log
 
 **No btsnoop log in bugreport** — Ensure BT HCI snoop is set to "Enabled" (not filtered) in Developer Options, toggle Bluetooth off/on, and perform some BLE activity before pulling.
 
-**Truncated/filtered packets** — Some phones only support filtered captures. Check Developer Options for unfiltered mode.
+**Truncated/filtered packets** — If the bugreport contains `btsnooz_hci.log` instead of `btsnoop_hci.log`, or the log has only advertising data without GATT Write/Notify payloads, BT HCI snoop logging is not set to the correct mode. Make sure it is set to **"Enabled"** (not "Enabled Filtered" or any other filtered mode) in Developer Options, then toggle Bluetooth off and on. See the [Bluetooth HCI Snoop Logging](#bluetooth-hci-snoop-logging) section above.
 
 **Wrong UI target selection** — Dump UI tree and update selectors in `ui_selectors.toml`.
 
