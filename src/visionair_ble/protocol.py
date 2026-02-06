@@ -134,8 +134,9 @@ class PacketType:
     REQUEST = 0x10              # Request command
     SETTINGS = 0x1A             # Settings command
     SETTINGS_ACK = 0x23         # Settings acknowledgment
-    SCHEDULE_CONFIG = 0x46      # Schedule configuration
-    SCHEDULE_QUERY = 0x47       # Schedule query
+    SCHEDULE_WRITE = 0x40       # Schedule config write (55 bytes) — experimental
+    SCHEDULE_CONFIG = 0x46      # Schedule config response (182 bytes) — experimental
+    SCHEDULE_QUERY = 0x47       # Schedule query — experimental
     HOLIDAY_STATUS = 0x50       # Holiday mode status
 
 
@@ -147,7 +148,7 @@ class RequestParam:
     PROBE_SENSORS = 0x07        # Request probe sensor readings
     SENSOR_SELECT = 0x18        # Set sensor cycle
     BOOST = 0x19                # Activate BOOST
-    REQUEST_1A = 0x1A           # Holiday value request in current VMI workflow
+    HOLIDAY = 0x1A              # Set holiday days (byte 9 = days, 0=OFF)
     HOLIDAY_STATUS = 0x2C       # Query holiday mode status
 
 
@@ -200,6 +201,7 @@ class DeviceStateOffset:
     TEMP_PROBE1 = 35            # Outlet temp (may be stale)
     SUMMER_LIMIT_TEMP = 38
     TEMP_PROBE2 = 42            # Inlet temp (may be stale)
+    HOLIDAY_DAYS = 43            # Holiday days remaining (0=OFF)
     BOOST_ACTIVE = 44
     AIRFLOW_INDICATOR = 47      # 38=low, 104=medium, 194=high
     PREHEAT_ENABLED = 49
@@ -262,6 +264,17 @@ AIRFLOW_INDICATOR: dict[int, int] = {
     AirflowIndicator.MEDIUM: AirflowLevel.MEDIUM,
     AirflowIndicator.HIGH: AirflowLevel.HIGH,
 }
+
+# Schedule slot mode byte <-> AirflowLevel
+# These differ from settings airflow bytes (which use two-byte pairs).
+# Schedule slots use a single byte per mode.
+SCHEDULE_MODE_BYTES: dict[int, int] = {
+    AirflowLevel.LOW: 0x28,
+    AirflowLevel.MEDIUM: 0x32,
+    # AirflowLevel.HIGH: unknown -- not captured yet
+}
+
+SCHEDULE_MODE_LOOKUP: dict[int, int] = {v: k for k, v in SCHEDULE_MODE_BYTES.items()}
 
 # Sensor selector (status byte 34)
 SENSOR_NAMES: dict[int, str] = {
@@ -355,6 +368,9 @@ class DeviceStatus:
     boost_active: bool = field(default=False, metadata=sensor(
         "Boost active", enabled_default=False
     ))
+    holiday_days: int = field(default=0, metadata=sensor(
+        "Holiday days remaining", unit="d", device_class="duration", enabled_default=False
+    ))
 
 
 
@@ -378,6 +394,66 @@ class SensorData:
     filter_percent: int | None = field(default=None, metadata=sensor(
         "Filter remaining", unit="%", enabled_default=False
     ))
+
+
+@dataclass
+class ScheduleSlot:
+    """A single hourly schedule slot.
+
+    Each slot defines the preheat temperature and airflow mode for one hour
+    of the day (0-23). The hour is implied by position in the ScheduleConfig.slots list.
+
+    The mode_byte field stores the raw protocol byte for round-trip fidelity:
+    a schedule read from the device can be written back unchanged, even if it
+    contains unrecognized mode bytes (e.g., the unknown HIGH value).
+    """
+
+    preheat_temp: int  # Preheat temperature in degrees C
+    mode_byte: int     # Raw protocol mode byte (0x28=LOW, 0x32=MEDIUM)
+
+    @property
+    def airflow_mode(self) -> str:
+        """Human-readable airflow mode, or 'unknown' if mode byte unrecognized."""
+        level = SCHEDULE_MODE_LOOKUP.get(self.mode_byte)
+        if level == AirflowLevel.LOW:
+            return "low"
+        elif level == AirflowLevel.MEDIUM:
+            return "medium"
+        elif level == AirflowLevel.HIGH:
+            return "high"
+        return "unknown"
+
+    @classmethod
+    def from_mode(cls, preheat_temp: int, airflow: int) -> "ScheduleSlot":
+        """Create a slot from an AirflowLevel value.
+
+        Only LOW and MEDIUM are supported (HIGH mode byte is unknown).
+
+        Args:
+            preheat_temp: Preheat temperature in degrees C
+            airflow: AirflowLevel.LOW or AirflowLevel.MEDIUM
+
+        Raises:
+            ValueError: If airflow is HIGH (unknown byte) or invalid
+        """
+        if airflow not in SCHEDULE_MODE_BYTES:
+            if airflow == AirflowLevel.HIGH:
+                raise ValueError(
+                    "HIGH airflow mode byte for schedule slots is unknown"
+                )
+            raise ValueError(f"Invalid airflow level: {airflow}")
+        return cls(preheat_temp=preheat_temp, mode_byte=SCHEDULE_MODE_BYTES[airflow])
+
+
+@dataclass
+class ScheduleConfig:
+    """Full 24-hour schedule configuration.
+
+    Contains 24 hourly slots where index = hour (0-23).
+    Each slot defines the preheat temperature and airflow mode for that hour.
+    """
+
+    slots: list[ScheduleSlot]  # Exactly 24 slots, index = hour (0-23)
 
 
 def calc_checksum(data: bytes) -> int:
@@ -531,22 +607,10 @@ def build_boost_command(enable: bool) -> bytes:
 # Special Modes (Holiday, Night Ventilation, Fixed Air Flow)
 # =============================================================================
 #
-# ⚠️  EXPERIMENTAL - Protocol understanding is incomplete!
+# Holiday mode: Fully decoded. Uses REQUEST param 0x1a with days in byte 9.
+# Read back via DEVICE_STATE byte 43. The 0x50 response is constant/not useful.
 #
-# What we know:
-# - Current Holiday workflow uses REQUEST param 0x1a with value in byte 9
-# - OFF/clear is sent as REQUEST param 0x1a with value 0x00
-# - Holiday status query uses REQUEST param 0x2c
-#
-# What we DON'T know:
-# - Whether a separate ON-activation packet exists beyond value-setting
-# - Night Ventilation / Fixed Air Flow packet mapping
-# - Full decoding of Holiday status (type 0x50)
-#
-# Note: The SETTINGS-based special-mode builders below (byte7=0x04) model a
-# hypothetical activation path seen only in legacy captures. Current controlled
-# captures (2026) show Holiday control via REQUEST 0x1a, not SETTINGS packets.
-#
+# Night Ventilation / Fixed Air Flow: Protocol understanding is incomplete.
 # These functions require _experimental=True flag to acknowledge the risks.
 
 
@@ -566,30 +630,31 @@ def _require_experimental(flag: bool, feature: str) -> None:
         )
 
 
-def build_request_1a(*, _experimental: bool = False) -> bytes:
-    """Build Holiday value request (request param 0x1a).
+def build_holiday_command(days: int) -> bytes:
+    """Build a Holiday mode command packet.
 
-    ⚠️  EXPERIMENTAL: Confirmed in current VMI workflow for Holiday day value
-    updates and clear/off (value 0). Broader behavior is still not fully decoded.
+    Sets the number of holiday days. The device reflects this value in
+    DEVICE_STATE byte 43. Send days=0 to disable holiday mode.
 
     Args:
-        _experimental: Must be True to use this function
+        days: Number of holiday days (0=OFF, 1-255=active)
 
     Returns:
         Complete packet bytes
 
     Raises:
-        ExperimentalFeatureError: If _experimental is not True
+        ValueError: If days is not in range 0-255
     """
-    _require_experimental(_experimental, "Request 0x1a")
-    return build_request(RequestParam.REQUEST_1A, extended=True)
+    if not 0 <= days <= 255:
+        raise ValueError("days must be between 0 and 255")
+    return build_request(RequestParam.HOLIDAY, value=days, extended=True)
 
 
 def build_holiday_status_query() -> bytes:
-    """Build query to get Holiday mode status.
+    """Build query to get Holiday mode status via type 0x50 response.
 
-    Returns type 0x50 response with current Holiday mode state.
-    Note: Parsing of the 0x50 response is not yet implemented.
+    Note: The 0x50 response is constant and does not reflect holiday state.
+    Use DEVICE_STATE byte 43 (holiday_days) for reliable holiday status.
 
     Returns:
         Complete packet bytes
@@ -606,31 +671,6 @@ def _raise_special_mode_unsupported(feature: str, *, _experimental: bool) -> Non
         "has not been observed in current captures. "
         "We cannot generate valid packets without the encoding algorithm."
     )
-
-
-def build_holiday_activate(
-    days: int, preheat_enabled: bool = True, *, _experimental: bool = False
-) -> list[bytes]:
-    """Build complete Holiday mode activation sequence (hypothetical SETTINGS path).
-
-    ⚠️  EXPERIMENTAL: This models the SETTINGS-based activation (byte7=0x04) seen
-    only in legacy captures. Current Holiday workflow uses REQUEST param 0x1a
-    instead. This function is intentionally unsupported until the SETTINGS-based
-    encoding algorithm is decoded (if it is even still used by the device).
-
-    Args:
-        days: Number of days for Holiday mode (typically 1-30)
-        preheat_enabled: Whether to enable preheat during Holiday
-        _experimental: Must be True to use this function
-
-    Returns:
-        List of packet bytes to send in sequence
-
-    Raises:
-        ExperimentalFeatureError: If _experimental is not True
-    """
-    _raise_special_mode_unsupported("Holiday mode", _experimental=_experimental)
-    return []
 
 
 def build_night_ventilation_activate(
@@ -675,6 +715,42 @@ def build_fixed_airflow_activate(
     """
     _raise_special_mode_unsupported("Fixed Air Flow mode", _experimental=_experimental)
     return b""
+
+
+def build_schedule_write(
+    config: ScheduleConfig, *, _experimental: bool = False
+) -> bytes:
+    """Build a schedule config write packet (type 0x40).
+
+    Constructs a 55-byte packet with 24 hourly time slots. Each slot is
+    2 bytes: preheat temperature (degrees C) and mode byte.
+
+    Args:
+        config: ScheduleConfig with exactly 24 slots
+        _experimental: Must be True to use this function
+
+    Returns:
+        55-byte packet: a5b6 40 06 31 00 [24x2-byte slots] [checksum]
+
+    Raises:
+        ExperimentalFeatureError: If _experimental is not True
+        ValueError: If config does not have exactly 24 slots
+    """
+    _require_experimental(_experimental, "Schedule write")
+
+    if len(config.slots) != 24:
+        raise ValueError(
+            f"Schedule must have exactly 24 slots, got {len(config.slots)}"
+        )
+
+    payload = bytearray([PacketType.SCHEDULE_WRITE, 0x06, 0x31, 0x00])
+
+    for slot in config.slots:
+        payload.append(slot.preheat_temp)
+        payload.append(slot.mode_byte)
+
+    checksum = calc_checksum(bytes(payload))
+    return MAGIC + bytes(payload) + bytes([checksum])
 
 
 def build_settings_packet(
@@ -795,6 +871,7 @@ def parse_status(data: bytes) -> DeviceStatus | None:
         summer_limit_enabled=data[DeviceStateOffset.SUMMER_LIMIT_ENABLED] != 0x00,
         summer_limit_temp=data[DeviceStateOffset.SUMMER_LIMIT_TEMP] if len(data) > DeviceStateOffset.SUMMER_LIMIT_TEMP else None,
         preheat_temp=data[DeviceStateOffset.PREHEAT_TEMP],
+        holiday_days=data[DeviceStateOffset.HOLIDAY_DAYS] if len(data) > DeviceStateOffset.HOLIDAY_DAYS else 0,
         boost_active=data[DeviceStateOffset.BOOST_ACTIVE] == 0x01 if len(data) > DeviceStateOffset.BOOST_ACTIVE else False,
         sensor_selector=sensor_selector,
         sensor_name=sensor_name,
@@ -836,6 +913,31 @@ def parse_sensors(data: bytes) -> SensorData | None:
         humidity_probe1=data[ProbeSensorOffset.HUMIDITY_PROBE1] if len(data) > ProbeSensorOffset.HUMIDITY_PROBE1 else None,
         filter_percent=data[ProbeSensorOffset.FILTER_PERCENT] if len(data) > ProbeSensorOffset.FILTER_PERCENT else None,
     )
+
+
+def parse_schedule_config(data: bytes) -> ScheduleConfig | None:
+    """Parse schedule config response packet (type 0x46).
+
+    Args:
+        data: Raw packet bytes from SCHEDULE_CONFIG notification (182 bytes,
+              or 55+ bytes if zero-padding is stripped)
+
+    Returns:
+        ScheduleConfig with 24 slots, or None if packet is invalid
+    """
+    if len(data) < 55 or data[:2] != MAGIC or data[2] != PacketType.SCHEDULE_CONFIG:
+        return None
+
+    # Verify header bytes
+    if data[3:6] != bytes([0x06, 0x31, 0x00]):
+        return None
+
+    slots = []
+    for i in range(24):
+        offset = 6 + (i * 2)
+        slots.append(ScheduleSlot(preheat_temp=data[offset], mode_byte=data[offset + 1]))
+
+    return ScheduleConfig(slots=slots)
 
 
 def is_visionair_device(address: str, name: str | None) -> bool:

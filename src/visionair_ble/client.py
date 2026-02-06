@@ -27,12 +27,18 @@ from .protocol import (
     AirflowLevel,
     DeviceStatus,
     PacketType,
+    ScheduleConfig,
     SensorData,
+    _require_experimental,
     build_boost_command,
+    build_full_data_request,
+    build_holiday_command,
+    build_schedule_write,
     build_sensor_request,
     build_sensor_select_request,
     build_settings_packet,
     build_status_request,
+    parse_schedule_config,
     parse_sensors,
     parse_status,
 )
@@ -492,6 +498,69 @@ class VisionAirClient:
         await asyncio.sleep(0.5)
         return await self.get_status()
 
+    async def set_holiday(self, days: int, timeout: float = 10.0) -> DeviceStatus:
+        """Set holiday mode duration.
+
+        Holiday mode puts the device in a low-power state for the specified
+        number of days. The remaining days can be read from DeviceStatus.holiday_days.
+
+        The device responds with a DEVICE_STATE packet (not SETTINGS_ACK).
+
+        Args:
+            days: Number of holiday days (0=OFF, 1-255=active)
+            timeout: How long to wait for response
+
+        Returns:
+            Updated DeviceStatus after change
+
+        Raises:
+            ValueError: If days is not in range 0-255
+            TimeoutError: If no response within timeout
+        """
+        self._find_characteristics()
+
+        packet = build_holiday_command(days)
+
+        status_data: bytes | None = None
+        event = asyncio.Event()
+
+        def handler(*args: Any) -> None:
+            nonlocal status_data
+            data = args[-1]
+            if bytes(data[:2]) == MAGIC and data[2] == PacketType.DEVICE_STATE:
+                status_data = bytes(data)
+                event.set()
+
+        await self._client.start_notify(self._status_char, handler)
+        try:
+            await self._client.write_gatt_char(self._command_char, packet, response=True)
+            await asyncio.wait_for(event.wait(), timeout=timeout)
+        finally:
+            await self._client.stop_notify(self._status_char)
+
+        if not status_data:
+            raise TimeoutError("No status response received")
+
+        status = parse_status(status_data)
+        if not status:
+            raise ValueError("Invalid status response")
+
+        self._last_status = status
+        return status
+
+    async def clear_holiday(self, timeout: float = 10.0) -> DeviceStatus:
+        """Disable holiday mode.
+
+        Convenience method equivalent to ``set_holiday(0)``.
+
+        Args:
+            timeout: How long to wait for acknowledgment
+
+        Returns:
+            Updated DeviceStatus after change
+        """
+        return await self.set_holiday(0, timeout=timeout)
+
     async def set_preheat(
         self,
         enabled: bool,
@@ -536,6 +605,89 @@ class VisionAirClient:
         return await self.set_airflow_mode(
             mode=mode,
             summer_limit_enabled=enabled,
+        )
+
+    async def get_schedule(
+        self, *, _experimental: bool = False, timeout: float = 10.0
+    ) -> ScheduleConfig:
+        """Read the current schedule configuration from the device.
+
+        Sends a Full Data Request and listens for a SCHEDULE_CONFIG (0x46)
+        notification among the responses.
+
+        Note: It is not yet confirmed that Full Data Request triggers a 0x46
+        response. If this times out, Phase 1 BLE captures are needed to
+        identify the correct trigger command.
+
+        Args:
+            _experimental: Must be True to use this function
+            timeout: How long to wait for response in seconds
+
+        Returns:
+            ScheduleConfig with 24 hourly slots
+
+        Raises:
+            ExperimentalFeatureError: If _experimental is not True
+            TimeoutError: If no SCHEDULE_CONFIG response within timeout
+        """
+        _require_experimental(_experimental, "Schedule read")
+        self._find_characteristics()
+
+        config_data: bytes | None = None
+        event = asyncio.Event()
+
+        def handler(*args: Any) -> None:
+            nonlocal config_data
+            data = args[-1]
+            if bytes(data[:2]) == MAGIC and data[2] == PacketType.SCHEDULE_CONFIG:
+                config_data = bytes(data)
+                event.set()
+
+        await self._client.start_notify(self._status_char, handler)
+        try:
+            await self._client.write_gatt_char(
+                self._command_char, build_full_data_request(), response=True
+            )
+            await asyncio.wait_for(event.wait(), timeout=timeout)
+        finally:
+            await self._client.stop_notify(self._status_char)
+
+        if not config_data:
+            raise TimeoutError("No schedule config response received")
+
+        config = parse_schedule_config(config_data)
+        if not config:
+            raise ValueError("Invalid schedule config response")
+
+        return config
+
+    async def set_schedule(
+        self,
+        config: ScheduleConfig,
+        *,
+        _experimental: bool = False,
+    ) -> None:
+        """Write a schedule configuration to the device.
+
+        Sends a 0x40 schedule config write packet. The device acknowledgment
+        pattern is not yet known, so this method writes the packet and returns
+        without waiting for confirmation.
+
+        Args:
+            config: ScheduleConfig with exactly 24 slots
+            _experimental: Must be True to use this function
+
+        Raises:
+            ExperimentalFeatureError: If _experimental is not True
+            ValueError: If config is invalid
+        """
+        _require_experimental(_experimental, "Schedule write")
+        self._find_characteristics()
+
+        packet = build_schedule_write(config, _experimental=True)
+
+        await self._client.write_gatt_char(
+            self._command_char, packet, response=True
         )
 
     @property

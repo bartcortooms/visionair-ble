@@ -52,6 +52,14 @@ The tests are read-only and do not modify device settings.
 - Rename things when we discover the current name is misleading
 - Do not keep old names around "for compatibility"
 
+## Logbook
+
+Maintain a logbook under `docs/logbook/` to record discoveries, work done, and notes for later. Use `date +%Y-%m-%d` to get today's date and create entries as `docs/logbook/YYYY-MM-DD.md`. Include:
+- What was investigated or implemented
+- Key discoveries and findings
+- Open questions and things to revisit
+- Raw observations that might be useful later
+
 ## Protocol Reverse Engineering
 
 This is a reverse-engineered protocol. We have no vendor documentation.

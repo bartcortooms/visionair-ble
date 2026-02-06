@@ -195,40 +195,28 @@ Structure: `a5b6 1a 06 06 1a <preheat> <mode> <temp> <af1> <af2> <checksum>`
 > obvious mathematical relationship between values supports this — they're likely
 > calibrated motor control values rather than computed from airflow.
 
+#### Holiday Command (type 0x10, param 0x1a)
+
+| Command | Packet | Description |
+|---------|--------|-------------|
+| Holiday 3 days | `a5b61006051a000000030a` | Set 3-day holiday |
+| Holiday 7 days | `a5b61006051a000000070e` | Set 7-day holiday |
+| Holiday OFF | `a5b61006051a0000000009` | Disable holiday |
+
+Byte 9 carries the number of holiday days (0=OFF, 1-255=active). The device
+reflects this value immediately in DEVICE_STATE byte 43 (`holiday_days`).
+
+**Reading holiday status:** Use DEVICE_STATE byte 43, not the 0x50 response.
+The 0x50 response (from `REQUEST` param `0x2c`) is constant and does not
+reflect holiday state.
+
+> Verified via controlled capture session `data/captures/issue12_final2_20260205_225506`.
+> Byte 43 changes instantly to match the value sent and returns to 0 when cleared.
+
 ### 4.3 Special Modes
 
-> **⚠️ EXPERIMENTAL:** These features have significant gaps in protocol understanding.
-> See [Open Questions](#open-questions) for details. Use with caution.
-
-**Capture-backed update (2026-02-05, controlled run):**
-- Capture session: `data/captures/issue12_final2_20260205_225506`
-- Authoritative source: VMI app actions with timestamped checkpoints
-- In this workflow, Holiday control is done via `REQUEST` (type `0x10`) with param `0x1a`
-- No `SETTINGS` packet with byte 7 = `0x04` was observed
-
-#### Holiday Mode
-
-**What we know:**
-- Setting Holiday days sends `REQUEST` param `0x1a` with value in byte 9
-- Toggling Holiday OFF sends the same request with value `0x00`
-- Holiday status polling uses `REQUEST` param `0x2c` and returns type `0x50`
-
-Observed examples from the controlled capture:
-- Days = 3: `a5b61006051a000000030a`
-- Days = 7: `a5b61006051a000000070e`
-- OFF/clear: `a5b61006051a0000000009`
-
-**What we DON'T know:**
-- Whether there is an additional distinct ON-activation packet beyond setting days
-- Full structure/meaning of the type `0x50` Holiday status payload
-- Whether alternate app paths emit a `SETTINGS`-based special-mode command
-
-**Holiday status query (param 0x2c):**
-```
-a5b6 10 06 05 2c 00 00 00 00 3f
-```
-
-Returns type 0x50 response (structure not yet decoded).
+> **Experimental:** Night Ventilation and Fixed Air Flow have significant gaps
+> in protocol understanding. See [Open Questions](#open-questions) for details.
 
 #### Night Ventilation Boost
 
@@ -252,13 +240,29 @@ Returns type 0x50 response (structure not yet decoded).
 
 ### 4.4 Schedule Commands
 
-#### Schedule Config (type 0x46)
+#### Schedule Config Write (type 0x40)
+
+> **Experimental:** Observed in captures but not yet verified via e2e tests
+> or controlled VMI app reverse engineering. Structure is high-confidence
+> (ATT framing confirmed, XOR checksum valid), but behavioral details
+> (e.g. device response, required preconditions) are unverified.
+
+Writes schedule configuration to the device. Same slot encoding as the
+Schedule Config response (type 0x46), but sent as a 55-byte command.
 
 ```
-a5b6 46 06 31 00 <slot_data...>
+a5b6 40 06 31 00 <24 x 2-byte slots> <checksum>
 ```
 
-Contains 24 time slots (2 bytes each):
+| Offset | Size | Description |
+|--------|------|-------------|
+| 0-1 | 2 | Magic `a5b6` |
+| 2 | 1 | Type `0x40` |
+| 3-5 | 3 | Header `06 31 00` |
+| 6-53 | 48 | 24 time slots (2 bytes each) |
+| 54 | 1 | XOR checksum |
+
+Each slot is 2 bytes:
 
 | Byte | Description |
 |------|-------------|
@@ -272,6 +276,28 @@ Contains 24 time slots (2 bytes each):
 | Mode 1 | 0x28 (40) | LOW |
 | Mode 2 | 0x32 (50) | MEDIUM |
 | Mode 3 | ? | HIGH (not captured) |
+
+**Example** (hour 1 set to MEDIUM, rest LOW):
+```
+a5b6 40 06 31 00 1028 1032 1028 1028 1028 1028 1028 1028
+                  1032 1032 1032 1032 1032 1032 1032 1032
+                  1032 1028 1028 1028 1028 1028 1028 77
+```
+
+> **Discovered (2026-02-06):** First observed in Feb 5 captures during
+> schedule editing. Verified via ATT framing as a real command (written to
+> handle 0x0013). XOR checksum confirmed valid.
+
+#### Schedule Config Response (type 0x46)
+
+> **Experimental:** Observed in captures but not yet verified via e2e tests.
+
+The device's response containing current schedule configuration. Same slot
+format as 0x40, padded to 182 bytes with zeros.
+
+```
+a5b6 46 06 31 00 <slot_data...> <checksum> <zero padding to 182 bytes>
+```
 
 #### Schedule Query (type 0x47)
 
@@ -293,8 +319,10 @@ Responses arrive as notifications on characteristic handle 0x000e. Subscribe by 
 | `0x02` | 182 bytes | Schedule (time slot configuration) |
 | `0x03` | 182 bytes | Probe Sensors (current probe readings) |
 | `0x23` | 182 bytes | Settings acknowledgment |
-| `0x46` | varies | Schedule config data |
-| `0x50` | varies | Holiday status |
+| `0x40` | 55 bytes | Schedule Config Write (experimental) |
+| `0x46` | 182 bytes | Schedule Config Response (experimental) |
+| `0x47` | 26 bytes | Schedule Query (experimental) |
+| `0x50` | varies | Holiday status (constant, not useful — use byte 43) |
 
 ### 5.1 Device State Packet (type 0x01)
 
@@ -313,6 +341,7 @@ Responses arrive as notifications on characteristic handle 0x000e. Subscribe by 
 | 35 | 1 | Probe 1 temperature (°C) — **often stale** | 16 |
 | 38 | 1 | Summer limit temp threshold (°C) | 26 |
 | 42 | 1 | Probe 2 temperature (°C) — **often stale** | 11 |
+| 43 | 1 | Holiday days remaining | 0=OFF, N=days |
 | 44 | 1 | BOOST active | 0=OFF, 1=ON |
 | 47 | 1 | Airflow indicator | 38/104/194 |
 | 48 | 1 | Airflow mode | 1=MID/MAX, 2=MIN |
@@ -468,20 +497,22 @@ The volume is configured during professional installation based on the ventilate
 | Purevent Vision'R | 350 m³/h | Houses |
 | Pro 1000 | 1000 m³/h | Commercial |
 
-### 7.3 Special Mode Encoding
+### 7.3 Holiday Mode Encoding
 
-Current confirmed Holiday control encoding in VMI workflow:
+Holiday control uses `REQUEST` (type `0x10`) with param `0x1a`:
 
 | Packet | Meaning |
 |--------|---------|
-| `a5b61006051a000000NNCC` | Holiday value command (`NN` = days/clear value, `CC` = checksum) |
+| `a5b61006051a000000NNCC` | Holiday command (`NN` = days, `CC` = checksum) |
 
 Where:
-- `0x10` packet type (`REQUEST`)
+- `0x10` packet type (`REQUEST`), `0x06` extended format
 - Request param `0x1a` in byte 5
-- Byte 9 carries Holiday value (observed: `0x03`, `0x07`, `0x00`)
+- Byte 9 = holiday days (0=OFF, 1-255=active)
 
-`SETTINGS` byte7=`0x04` remains unconfirmed for current Holiday control path.
+Read back: DEVICE_STATE byte 43 contains the current holiday days value.
+The `0x50` response from holiday status query (param `0x2c`) is constant
+and should not be used for state monitoring.
 
 ## 8. Library
 
@@ -512,7 +543,6 @@ See [implementation-status.md](implementation-status.md) for feature implementat
 ### Open Questions
 
 **Special Modes:**
-- Whether a distinct Holiday ON activation packet exists beyond value-setting
 - Night Ventilation packet mapping and encoding
 - Fixed Air Flow packet mapping and encoding
 
@@ -529,7 +559,7 @@ See [implementation-status.md](implementation-status.md) for feature implementat
 - Device State byte 60 — values 100-210 observed, possibly humidity-related
 
 **Responses:**
-- Holiday Status (0x50) response structure — not decoded
+- Holiday Status (0x50) response structure — constant payload, not useful for state
 - Settings Ack (0x23) — structure not documented
 
 ## Appendix B: References

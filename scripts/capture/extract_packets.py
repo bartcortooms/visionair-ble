@@ -93,12 +93,14 @@ def find_vmi_packets(records: list) -> dict:
         msg_type = all_data[idx + 2]
 
         # Determine expected length
-        if msg_type in (0x01, 0x02, 0x03, 0x23):  # Status, Schedule, History, Ack
+        if msg_type in (0x01, 0x02, 0x03, 0x23, 0x46, 0x47, 0x50):  # 182-byte notifications
             pkt_len = 182
         elif msg_type == 0x10:  # Query
             pkt_len = 11
         elif msg_type == 0x1a:  # Settings
             pkt_len = 12
+        elif msg_type == 0x40:  # Schedule Config Write
+            pkt_len = 55
         else:
             pkt_len = min(20, len(all_data) - idx)
 
@@ -131,9 +133,9 @@ def find_vmi_packets(records: list) -> dict:
             result['raw_packets'].append(pkt_info)
 
             # Classify as write or notify based on type
-            if msg_type in (0x10, 0x1a):  # Commands
+            if msg_type in (0x10, 0x1a, 0x40):  # Commands
                 result['writes'].append(pkt_info)
-            else:  # Notifications (0x01, 0x02, 0x03, 0x23)
+            else:  # Notifications (0x01, 0x02, 0x03, 0x23, 0x46, 0x47, 0x50)
                 result['notifies'].append(pkt_info)
 
         pos = idx + 1
@@ -199,6 +201,10 @@ def get_type_name(msg_type: int) -> str:
         0x10: 'REQUEST',
         0x1a: 'SETTINGS',
         0x23: 'SETTINGS_ACK',
+        0x40: 'SCHEDULE_WRITE',
+        0x46: 'SCHEDULE_CONFIG',
+        0x47: 'SCHEDULE_QUERY',
+        0x50: 'HOLIDAY_STATUS',
     }
     return names.get(msg_type, f'UNKNOWN_{msg_type:02x}')
 

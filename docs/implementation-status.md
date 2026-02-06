@@ -12,12 +12,13 @@ This document tracks which protocol features from [protocol.md](protocol.md) are
 | Sensor Select Request (0x10, param 0x18) | Yes | Yes | `build_sensor_select_request(sensor)` — verified 2026-02-05 |
 | BOOST ON/OFF (0x10, param 0x19) | Yes | Yes | `build_boost_command()` |
 | Settings (0x1a) - airflow/preheat/summer | Yes | Yes | `build_settings_packet()` |
-| Holiday Value Request (0x10, param 0x1a) | Yes | Experimental | `build_request_1a()` |
-| Holiday Activate (0x1a, byte7=0x04) — hypothetical | Partial | Experimental | `build_holiday_activate()` (SETTINGS-based; not observed in current captures) |
+| Holiday Command (0x10, param 0x1a) | Yes | Yes | `build_holiday_command(days)` |
 | Holiday Status Query (0x10, param 0x2c) | Yes | Yes | `build_holiday_status_query()` |
 | Night Ventilation (0x1a, byte7=0x04) — hypothetical | Partial | Experimental | `build_night_ventilation_activate()` (SETTINGS-based; not observed in current captures) |
 | Fixed Air Flow (0x1a, byte7=0x04) — hypothetical | Partial | Experimental | `build_fixed_airflow_activate()` (SETTINGS-based; not observed in current captures) |
-| Schedule Config (0x46, 0x47) | Yes | No | — |
+| Schedule Config Write (0x40) | Experimental | Experimental | `build_schedule_write()`, `VisionAirClient.set_schedule()` |
+| Schedule Config Read (0x46) | Experimental | Experimental | `parse_schedule_config()`, `VisionAirClient.get_schedule()` |
+| Schedule Query (0x47) | Experimental | No | Direction/structure unclear |
 | Schedule Command (0x1a, byte7=0x05) | Partial | No | — |
 
 ## Responses (Notification Parsing)
@@ -29,9 +30,10 @@ This document tracks which protocol features from [protocol.md](protocol.md) are
 | Status - bypass state | Partial | No | — |
 | Sensor/History (0x03) | Yes | Yes | `parse_sensors()` |
 | Schedule (0x02) - current time | Yes | No | — |
-| Schedule Config (0x46) | Yes | No | — |
+| Schedule Config Response (0x46) | Experimental | Experimental | `parse_schedule_config()` — needs e2e verification |
 | Settings Ack (0x23) | Partial | No | — |
-| Holiday Status (0x50) | Partial | No | — |
+| Status - holiday_days (byte 43) | Yes | Yes | `parse_status()` → `DeviceStatus.holiday_days` |
+| Holiday Status (0x50) | Partial | No | Constant response, not useful for state |
 
 ## Data Structures
 
@@ -39,6 +41,9 @@ This document tracks which protocol features from [protocol.md](protocol.md) are
 |---------|------------|-------------|-------|
 | `DeviceStatus` dataclass | Yes | Yes | Core status fields |
 | `SensorData` dataclass | Yes | Yes | Live sensor readings |
+| `ScheduleSlot` dataclass | Yes | Yes | Per-hour schedule slot (preheat temp + mode) |
+| `ScheduleConfig` dataclass | Yes | Yes | 24-hour schedule (list of slots) |
+| Schedule mode byte mapping | Partial | Yes | LOW=0x28, MEDIUM=0x32, HIGH=unknown |
 | Airflow mode mapping | Yes | Yes | LOW/MEDIUM/HIGH — byte meaning unknown |
 | Volume-based calculation | Yes | Yes | ACH multipliers |
 | Sensor metadata for HA | Yes | Yes | Auto-discovery support |
@@ -48,20 +53,23 @@ This document tracks which protocol features from [protocol.md](protocol.md) are
 Features that are fully documented and ready for implementation:
 
 1. **Schedule Config** — Time slot read/write for automated ventilation profiles
-2. **Holiday Status (0x50)** — Parse response from `build_holiday_status_query()`
 
 ## Experimental Features
 
 Features marked "Experimental" require `_experimental=True` flag to use. They have known gaps in protocol understanding:
 
-- **Holiday Mode**
-  - **Confirmed (partial):** Holiday day values and clear/off via REQUEST param `0x1a` (byte 9). This is the workflow observed in current VMI captures.
-  - **Unconfirmed:** SETTINGS packet with byte7=0x04 (legacy captures only). Encoding for bytes 8-10 is unknown; `build_holiday_activate()` models this hypothetical path.
-
 - **Night Ventilation / Fixed Air Flow** — Hypothetical SETTINGS-based activation (byte7=0x04):
   - Never observed in current captures; packet mapping is unconfirmed
   - We don't know how the device distinguishes between these three modes
   - May require different preceding queries or internal state
+
+- **Schedule Config (0x40, 0x46)** — Implemented as experimental (`_experimental=True` required):
+  - `build_schedule_write()` / `set_schedule()`: Builds 0x40 packet (55 bytes, 24 slots)
+  - `parse_schedule_config()` / `get_schedule()`: Parses 0x46 response (182 bytes)
+  - `ScheduleSlot` / `ScheduleConfig`: Data structures for schedule representation
+  - Unknown: HIGH mode byte, 0x47 trigger/purpose, device ack after 0x40 write
+  - Unknown: Whether Full Data Request triggers 0x46 (or if a separate command is needed)
+  - Needs: controlled VMI capture session (issue #2, Phase 1) for e2e verification
 
 ## Needs Verification
 

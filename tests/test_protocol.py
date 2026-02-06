@@ -6,19 +6,26 @@ from visionair_ble.protocol import (
     AIRFLOW_HIGH,
     AIRFLOW_LOW,
     AIRFLOW_MEDIUM,
+    MAGIC,
+    SCHEDULE_MODE_BYTES,
+    SCHEDULE_MODE_LOOKUP,
     AirflowLevel,
     ExperimentalFeatureError,
+    PacketType,
+    ScheduleConfig,
+    ScheduleSlot,
     build_boost_command,
     build_fixed_airflow_activate,
-    build_holiday_activate,
+    build_holiday_command,
     build_holiday_status_query,
     build_night_ventilation_activate,
-    build_request_1a,
+    build_schedule_write,
     build_sensor_select_request,
     build_settings_packet,
     build_status_request,
     calc_checksum,
     is_visionair_device,
+    parse_schedule_config,
     parse_status,
     verify_checksum,
 )
@@ -261,32 +268,66 @@ class TestDeviceIdentification:
         assert not is_visionair_device("AA:BB:CC:DD:EE:FF", None)
 
 
-class TestSpecialModes:
-    """Tests for Holiday, Night Ventilation, and Fixed Air Flow modes.
+class TestHolidayMode:
+    """Tests for Holiday mode command and status parsing."""
 
-    These features have incomplete protocol understanding and always raise errors.
-    """
+    def test_build_holiday_command_3_days(self):
+        """Test Holiday command for 3 days."""
+        packet = build_holiday_command(3)
+        assert packet == bytes.fromhex("a5b61006051a000000030a")
+        assert verify_checksum(packet)
 
-    def test_request_1a_requires_experimental_flag(self):
-        """Test that Request 0x1a raises without experimental flag."""
-        with pytest.raises(ExperimentalFeatureError, match="experimental"):
-            build_request_1a()
+    def test_build_holiday_command_7_days(self):
+        """Test Holiday command for 7 days."""
+        packet = build_holiday_command(7)
+        assert packet == bytes.fromhex("a5b61006051a000000070e")
+        assert verify_checksum(packet)
 
-    def test_request_1a_with_experimental_flag(self):
-        """Test Request 0x1a packet with experimental flag."""
-        packet = build_request_1a(_experimental=True)
+    def test_build_holiday_command_off(self):
+        """Test Holiday OFF command (days=0)."""
+        packet = build_holiday_command(0)
         assert packet == bytes.fromhex("a5b61006051a0000000009")
         assert verify_checksum(packet)
 
-    def test_holiday_activate_requires_experimental_flag(self):
-        """Test that Holiday activate raises without experimental flag."""
-        with pytest.raises(ExperimentalFeatureError, match="experimental"):
-            build_holiday_activate(7)
+    def test_build_holiday_command_invalid(self):
+        """Test Holiday command rejects invalid days."""
+        with pytest.raises(ValueError, match="days must be between 0 and 255"):
+            build_holiday_command(-1)
+        with pytest.raises(ValueError, match="days must be between 0 and 255"):
+            build_holiday_command(256)
 
-    def test_holiday_activate_unsupported(self):
-        """Test that Holiday activate is unsupported even with experimental flag."""
-        with pytest.raises(ExperimentalFeatureError, match="encoding is unknown"):
-            build_holiday_activate(7, _experimental=True)
+    def test_parse_status_holiday_days(self):
+        """Test parsing holiday_days from byte 43 of DEVICE_STATE."""
+        packet = bytearray(70)
+        packet[0:2] = b"\xa5\xb6"
+        packet[2] = 0x01
+        packet[22:24] = (363).to_bytes(2, "little")
+        packet[47] = 104  # MEDIUM airflow
+
+        # Holiday inactive
+        packet[43] = 0
+        status = parse_status(bytes(packet))
+        assert status is not None
+        assert status.holiday_days == 0
+
+        # Holiday active (5 days)
+        packet[43] = 5
+        status = parse_status(bytes(packet))
+        assert status is not None
+        assert status.holiday_days == 5
+
+    def test_build_holiday_status_query(self):
+        """Test Holiday status query packet."""
+        packet = build_holiday_status_query()
+        assert packet == bytes.fromhex("a5b61006052c000000003f")
+        assert verify_checksum(packet)
+
+
+class TestSpecialModes:
+    """Tests for Night Ventilation and Fixed Air Flow modes.
+
+    These features have incomplete protocol understanding and always raise errors.
+    """
 
     def test_night_ventilation_requires_experimental_flag(self):
         """Test that Night Ventilation raises without experimental flag."""
@@ -308,8 +349,233 @@ class TestSpecialModes:
         with pytest.raises(ExperimentalFeatureError, match="encoding is unknown"):
             build_fixed_airflow_activate(_experimental=True)
 
-    def test_build_holiday_status_query(self):
-        """Test Holiday status query packet (no experimental flag needed)."""
-        packet = build_holiday_status_query()
-        assert packet == bytes.fromhex("a5b61006052c000000003f")
+
+class TestScheduleModeBytes:
+    """Tests for schedule mode byte constants."""
+
+    def test_mode_bytes_bidirectional(self):
+        """SCHEDULE_MODE_BYTES and SCHEDULE_MODE_LOOKUP are inverses."""
+        for airflow, mode_byte in SCHEDULE_MODE_BYTES.items():
+            assert SCHEDULE_MODE_LOOKUP[mode_byte] == airflow
+
+    def test_low_mode_byte(self):
+        assert SCHEDULE_MODE_BYTES[AirflowLevel.LOW] == 0x28
+
+    def test_medium_mode_byte(self):
+        assert SCHEDULE_MODE_BYTES[AirflowLevel.MEDIUM] == 0x32
+
+    def test_high_not_in_mode_bytes(self):
+        assert AirflowLevel.HIGH not in SCHEDULE_MODE_BYTES
+
+
+class TestScheduleSlot:
+    """Tests for ScheduleSlot creation and properties."""
+
+    def test_from_mode_low(self):
+        slot = ScheduleSlot.from_mode(16, AirflowLevel.LOW)
+        assert slot.preheat_temp == 16
+        assert slot.mode_byte == 0x28
+        assert slot.airflow_mode == "low"
+
+    def test_from_mode_medium(self):
+        slot = ScheduleSlot.from_mode(18, AirflowLevel.MEDIUM)
+        assert slot.preheat_temp == 18
+        assert slot.mode_byte == 0x32
+        assert slot.airflow_mode == "medium"
+
+    def test_from_mode_high_raises(self):
+        with pytest.raises(ValueError, match="HIGH"):
+            ScheduleSlot.from_mode(16, AirflowLevel.HIGH)
+
+    def test_from_mode_invalid_raises(self):
+        with pytest.raises(ValueError, match="Invalid airflow level"):
+            ScheduleSlot.from_mode(16, 99)
+
+    def test_unknown_mode_byte(self):
+        slot = ScheduleSlot(preheat_temp=16, mode_byte=0x3C)
+        assert slot.airflow_mode == "unknown"
+        assert slot.mode_byte == 0x3C
+
+    def test_raw_construction(self):
+        slot = ScheduleSlot(preheat_temp=20, mode_byte=0x28)
+        assert slot.preheat_temp == 20
+        assert slot.airflow_mode == "low"
+
+
+class TestBuildScheduleWrite:
+    """Tests for schedule write packet building."""
+
+    def test_requires_experimental(self):
+        config = ScheduleConfig(slots=[ScheduleSlot(16, 0x28)] * 24)
+        with pytest.raises(ExperimentalFeatureError):
+            build_schedule_write(config)
+
+    def test_all_low(self):
+        """Build schedule with all LOW slots at 16C."""
+        config = ScheduleConfig(slots=[ScheduleSlot(16, 0x28)] * 24)
+        packet = build_schedule_write(config, _experimental=True)
+
+        assert len(packet) == 55
+        assert packet[:2] == MAGIC
+        assert packet[2] == PacketType.SCHEDULE_WRITE
+        assert packet[3:6] == bytes([0x06, 0x31, 0x00])
+        # First slot: 16C (0x10), LOW (0x28)
+        assert packet[6] == 0x10
+        assert packet[7] == 0x28
         assert verify_checksum(packet)
+
+    def test_mixed_modes(self):
+        """Build schedule with mixed LOW and MEDIUM slots."""
+        slots = [ScheduleSlot(16, 0x28)] * 24
+        slots[1] = ScheduleSlot(16, 0x32)  # Hour 1: MEDIUM
+        config = ScheduleConfig(slots=slots)
+        packet = build_schedule_write(config, _experimental=True)
+
+        assert len(packet) == 55
+        assert packet[6:8] == bytes([0x10, 0x28])  # Hour 0: LOW
+        assert packet[8:10] == bytes([0x10, 0x32])  # Hour 1: MEDIUM
+        assert verify_checksum(packet)
+
+    def test_wrong_slot_count_too_few(self):
+        config = ScheduleConfig(slots=[ScheduleSlot(16, 0x28)] * 12)
+        with pytest.raises(ValueError, match="24 slots"):
+            build_schedule_write(config, _experimental=True)
+
+    def test_wrong_slot_count_too_many(self):
+        config = ScheduleConfig(slots=[ScheduleSlot(16, 0x28)] * 25)
+        with pytest.raises(ValueError, match="24 slots"):
+            build_schedule_write(config, _experimental=True)
+
+    def test_preserves_unknown_mode_bytes(self):
+        """Unknown mode bytes (e.g., HIGH) are written as-is for round-trip."""
+        slots = [ScheduleSlot(16, 0x28)] * 24
+        slots[5] = ScheduleSlot(16, 0x3C)  # Unknown mode byte
+        config = ScheduleConfig(slots=slots)
+        packet = build_schedule_write(config, _experimental=True)
+
+        # Hour 5 slot at offset 6 + 5*2 = 16
+        assert packet[16] == 0x10  # 16C
+        assert packet[17] == 0x3C  # Unknown mode preserved
+        assert verify_checksum(packet)
+
+
+class TestParseScheduleConfig:
+    """Tests for schedule config response parsing."""
+
+    def _make_packet(self, slots=None):
+        """Build a valid 182-byte 0x46 packet."""
+        packet = bytearray(182)
+        packet[0:2] = MAGIC
+        packet[2] = PacketType.SCHEDULE_CONFIG
+        packet[3:6] = bytes([0x06, 0x31, 0x00])
+        if slots is None:
+            # Default: all LOW at 16C
+            for i in range(24):
+                packet[6 + i * 2] = 0x10
+                packet[6 + i * 2 + 1] = 0x28
+        else:
+            for i, (temp, mode) in enumerate(slots):
+                packet[6 + i * 2] = temp
+                packet[6 + i * 2 + 1] = mode
+        return bytes(packet)
+
+    def test_parse_all_low(self):
+        packet = self._make_packet()
+        config = parse_schedule_config(packet)
+
+        assert config is not None
+        assert len(config.slots) == 24
+        assert config.slots[0].preheat_temp == 16
+        assert config.slots[0].mode_byte == 0x28
+        assert config.slots[0].airflow_mode == "low"
+
+    def test_parse_mixed_modes(self):
+        slots = [(16, 0x28)] * 24
+        slots[8] = (18, 0x32)  # Hour 8: MEDIUM at 18C
+        packet = self._make_packet(slots)
+        config = parse_schedule_config(packet)
+
+        assert config.slots[8].preheat_temp == 18
+        assert config.slots[8].mode_byte == 0x32
+        assert config.slots[8].airflow_mode == "medium"
+        # Other slots unchanged
+        assert config.slots[0].airflow_mode == "low"
+
+    def test_parse_unknown_mode_byte(self):
+        slots = [(16, 0x28)] * 24
+        slots[5] = (16, 0x3C)  # Unknown mode
+        packet = self._make_packet(slots)
+        config = parse_schedule_config(packet)
+
+        assert config.slots[5].mode_byte == 0x3C
+        assert config.slots[5].airflow_mode == "unknown"
+
+    def test_parse_invalid_magic(self):
+        packet = bytes([0x00, 0x00, PacketType.SCHEDULE_CONFIG] + [0] * 179)
+        assert parse_schedule_config(packet) is None
+
+    def test_parse_wrong_type(self):
+        packet = bytearray(182)
+        packet[0:2] = MAGIC
+        packet[2] = PacketType.DEVICE_STATE
+        assert parse_schedule_config(bytes(packet)) is None
+
+    def test_parse_wrong_header(self):
+        packet = bytearray(182)
+        packet[0:2] = MAGIC
+        packet[2] = PacketType.SCHEDULE_CONFIG
+        packet[3:6] = bytes([0x00, 0x00, 0x00])
+        assert parse_schedule_config(bytes(packet)) is None
+
+    def test_parse_too_short(self):
+        packet = bytearray(10)
+        packet[0:2] = MAGIC
+        packet[2] = PacketType.SCHEDULE_CONFIG
+        assert parse_schedule_config(bytes(packet)) is None
+
+
+class TestScheduleRoundTrip:
+    """Tests for schedule parse-build round-trip fidelity."""
+
+    def test_round_trip_slot_data(self):
+        """Build -> simulate 0x46 response -> parse -> build: slot data matches."""
+        slots = [ScheduleSlot(16, 0x28)] * 24
+        slots[3] = ScheduleSlot(18, 0x32)  # Hour 3: MEDIUM at 18C
+        original = ScheduleConfig(slots=slots)
+
+        packet = build_schedule_write(original, _experimental=True)
+
+        # Simulate device response: same slot data, different type byte, padded
+        response = bytearray(182)
+        response[0:2] = MAGIC
+        response[2] = PacketType.SCHEDULE_CONFIG
+        response[3:6] = packet[3:6]  # Header
+        response[6:54] = packet[6:54]  # Slot data
+
+        parsed = parse_schedule_config(bytes(response))
+        assert parsed is not None
+
+        rebuilt = build_schedule_write(parsed, _experimental=True)
+        # Slot data (bytes 6-53) should match exactly
+        assert packet[6:54] == rebuilt[6:54]
+
+    def test_round_trip_with_unknown_mode(self):
+        """Round-trip preserves unknown mode bytes."""
+        slots = [ScheduleSlot(16, 0x28)] * 24
+        slots[10] = ScheduleSlot(20, 0x3C)  # Unknown HIGH?
+        original = ScheduleConfig(slots=slots)
+
+        packet = build_schedule_write(original, _experimental=True)
+
+        response = bytearray(182)
+        response[0:2] = MAGIC
+        response[2] = PacketType.SCHEDULE_CONFIG
+        response[3:6] = packet[3:6]
+        response[6:54] = packet[6:54]
+
+        parsed = parse_schedule_config(bytes(response))
+        assert parsed.slots[10].mode_byte == 0x3C
+        assert parsed.slots[10].airflow_mode == "unknown"
+
+        rebuilt = build_schedule_write(parsed, _experimental=True)
+        assert packet[6:54] == rebuilt[6:54]

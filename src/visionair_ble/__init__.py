@@ -53,10 +53,14 @@ from .protocol import (
     VISIONAIR_MAC_PREFIX,
     # Data classes
     DeviceStatus,
+    ScheduleConfig,
+    ScheduleSlot,
     SensorData,
     # Functions
     build_boost_command,
     build_full_data_request,
+    build_holiday_command,
+    build_schedule_write,
     build_sensor_request,
     build_sensor_select_request,
     build_settings_packet,
@@ -64,6 +68,7 @@ from .protocol import (
     calc_checksum,
     format_sensors,
     is_visionair_device,
+    parse_schedule_config,
     parse_sensors,
     parse_status,
 )
@@ -77,6 +82,8 @@ __all__ = [
     "VisionAirClient",
     # Data classes
     "DeviceStatus",
+    "ScheduleConfig",
+    "ScheduleSlot",
     "SensorData",
     # Constants
     "AIRFLOW_LOW",
@@ -88,6 +95,8 @@ __all__ = [
     # Protocol functions (for advanced use)
     "build_boost_command",
     "build_full_data_request",
+    "build_holiday_command",
+    "build_schedule_write",
     "build_sensor_request",
     "build_sensor_select_request",
     "build_settings_packet",
@@ -95,6 +104,7 @@ __all__ = [
     "calc_checksum",
     "format_sensors",
     "is_visionair_device",
+    "parse_schedule_config",
     "parse_sensors",
     "parse_status",
 ]

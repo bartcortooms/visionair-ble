@@ -328,6 +328,78 @@ class TestFreshStatusReliability:
 
 
 @pytest.mark.e2e
+class TestHolidayMode:
+    """Test holiday mode set/clear via real device.
+
+    WARNING: These tests MODIFY device settings. Holiday mode is activated
+    briefly and then cleared. The cleanup always runs, even on test failure.
+    """
+
+    @pytest.mark.asyncio
+    async def test_set_and_clear_holiday(
+        self, device_address: str | None, proxy_host: str | None, proxy_key: str | None
+    ) -> None:
+        """Test setting holiday days and reading back from DeviceStatus.holiday_days."""
+        address = await find_device(device_address)
+
+        async with connect(address, proxy_host, proxy_key) as client:
+            visionair = VisionAirClient(client)
+
+            try:
+                # Set holiday to 3 days
+                status = await visionair.set_holiday(3)
+                assert isinstance(status, DeviceStatus)
+                assert status.holiday_days == 3, (
+                    f"Expected holiday_days=3, got {status.holiday_days}"
+                )
+                print(f"  set_holiday(3): holiday_days={status.holiday_days}")
+
+                # Clear holiday
+                status = await visionair.clear_holiday()
+                assert isinstance(status, DeviceStatus)
+                assert status.holiday_days == 0, (
+                    f"Expected holiday_days=0 after clear, got {status.holiday_days}"
+                )
+                print(f"  clear_holiday(): holiday_days={status.holiday_days}")
+            finally:
+                # Always clean up — ensure holiday is off
+                try:
+                    await visionair.clear_holiday()
+                except Exception:
+                    pass
+
+
+@pytest.mark.e2e
+class TestScheduleRead:
+    """Test schedule reading from real device (read-only, exploratory).
+
+    This test sends a Full Data Request and listens for a SCHEDULE_CONFIG
+    (0x46) notification. It is not yet confirmed that Full Data Request
+    triggers 0x46 -- this test helps determine that.
+    """
+
+    @pytest.mark.asyncio
+    async def test_get_schedule(
+        self, device_address: str | None, proxy_host: str | None, proxy_key: str | None
+    ) -> None:
+        """Test reading schedule config from device."""
+        from visionair_ble.protocol import ScheduleConfig
+
+        address = await find_device(device_address)
+
+        async with connect(address, proxy_host, proxy_key) as client:
+            visionair = VisionAirClient(client)
+            config = await visionair.get_schedule(_experimental=True, timeout=15.0)
+
+            assert isinstance(config, ScheduleConfig)
+            assert len(config.slots) == 24
+
+            for i, slot in enumerate(config.slots):
+                print(f"  Hour {i:2d}: {slot.preheat_temp}C {slot.airflow_mode} (0x{slot.mode_byte:02x})")
+                assert 0 <= slot.preheat_temp <= 40
+
+
+@pytest.mark.e2e
 class TestMultipleOperations:
     """Test multiple operations in sequence."""
 
