@@ -75,7 +75,7 @@ For phone setup, ADB connection, BT snoop logging details, and troubleshooting, 
 | `sensor-probe2` | Select Probe 2 (inlet) |
 | `sensor-remote` | Select Remote Control |
 
-### Fan Control (from home screen)
+### Fan Control (from home screen) ⚡
 | Command | Description |
 |---------|-------------|
 | `fan-min` | Set to LOW (131 m³/h) |
@@ -84,11 +84,13 @@ For phone setup, ADB connection, BT snoop logging details, and troubleshooting, 
 | `boost` | Activate BOOST mode |
 | `preheat-toggle` | Toggle preheat ON/OFF |
 
-### Holiday Mode (from Special modes screen)
+### Holiday Mode (from Special modes screen) ⚡
 | Command | Description |
 |---------|-------------|
 | `holiday-toggle` | Toggle Holiday mode ON/OFF |
 | `holiday-days <n>` | Set Holiday duration to n days |
+
+> ⚡ = **modifies VMI state**. These commands (plus `airflow`, `airflow-min`, `airflow-max`, `firmware-update`) are automatically logged to `data/captures/vmi_actions.log`. If a capture session is active, an automatic checkpoint (screenshot + timestamp) is also taken — no need to call `session-checkpoint` manually.
 
 ### Utility
 | Command | Description |
@@ -140,7 +142,10 @@ SCREENSHOT=$(./scripts/capture/vmictl.py session-checkpoint "$SESSION")
 
 # 3. Read the screenshot to see values, then append to checkpoints.txt
 
-# 4. End session and pull btsnoop logs
+# 4. State-modifying commands auto-checkpoint when a session is active:
+./scripts/capture/vmictl.py fan-max  # auto-checkpoint with note "action=fan-max"
+
+# 5. End session and pull btsnoop logs
 ./scripts/capture/vmictl.py session-end "$SESSION"
 ```
 
@@ -153,6 +158,8 @@ probe1_temp=16
 probe1_humidity=71
 notes=after switching to Probe1 sensor
 ```
+
+**Note:** State-modifying commands (`fan-*`, `boost`, `preheat-toggle`, `airflow*`, `holiday-*`, `firmware-update`) automatically create a checkpoint when a session is active. You only need manual `session-checkpoint` calls for read-only observations (navigating to a screen to record displayed values).
 
 ## Packet Analysis
 

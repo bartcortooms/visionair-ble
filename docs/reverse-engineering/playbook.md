@@ -151,6 +151,8 @@ EOF
 
 Each checkpoint automatically records a timestamp and screenshot filename.
 
+**Auto-checkpointing for state-modifying commands:** Commands that modify the VMI (`fan-min`, `fan-mid`, `fan-max`, `boost`, `preheat-toggle`, `airflow`, `airflow-min`, `airflow-max`, `holiday-toggle`, `holiday-days`, `firmware-update`) automatically take a checkpoint when a session is active. They also always append to `data/captures/vmi_actions.log` regardless of session state. This means you only need manual `session-checkpoint` calls for read-only observations.
+
 **Analysis with checkpoints:**
 ```bash
 python scripts/capture/extract_packets.py $SESSION/btsnoop.log \
