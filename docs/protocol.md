@@ -385,7 +385,7 @@ Responses arrive as notifications on characteristic handle 0x000e. Subscribe by 
 | 44 | 1 | BOOST active | 0=OFF, 1=ON |
 | 47 | 1 | Airflow indicator | 38/104/194 |
 | 48 | 1 | Airflow mode | 1=MID/MAX, 2=MIN |
-| 49 | 1 | Unknown | Changed by firmware update (not preheat) |
+| 49 | 1 | Unknown | Not preheat (see byte 53) |
 | 50 | 1 | Summer limit enabled | `0x02`=ON |
 | 53 | 1 | Preheat enabled | `0x01`=ON, `0x00`=OFF |
 | 54 | 1 | Diagnostic status bitfield | `0x0F`=all OK |

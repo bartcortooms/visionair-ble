@@ -208,7 +208,7 @@ class DeviceStateOffset:
     HOLIDAY_DAYS = 43            # Holiday days remaining (0=OFF)
     BOOST_ACTIVE = 44
     AIRFLOW_INDICATOR = 47      # 38=low, 104=medium, 194=high
-    UNKNOWN_49 = 49                # Changed by firmware update; NOT preheat (see byte 53)
+    UNKNOWN_49 = 49                # NOT preheat (see byte 53)
     SUMMER_LIMIT_ENABLED = 50
     PREHEAT_ENABLED = 53            # Preheat on/off (toggled via REQUEST param 0x2F)
     PREHEAT_TEMP = 56
