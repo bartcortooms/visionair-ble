@@ -17,6 +17,7 @@ from visionair_ble.protocol import (
     build_boost_command,
     build_fixed_airflow_activate,
     build_holiday_command,
+    build_preheat_request,
     build_holiday_status_query,
     build_night_ventilation_activate,
     build_schedule_config_request,
@@ -96,10 +97,21 @@ class TestPacketBuilding:
         assert packet == bytes.fromhex("a5b610060519000000000a")
         assert verify_checksum(packet)
 
+    def test_build_preheat_on(self):
+        """Test preheat ON command (REQUEST param 0x2F, value 1)."""
+        packet = build_preheat_request(True)
+        assert packet == bytes.fromhex("a5b61006052f000000013d")
+        assert verify_checksum(packet)
+
+    def test_build_preheat_off(self):
+        """Test preheat OFF command (REQUEST param 0x2F, value 0)."""
+        packet = build_preheat_request(False)
+        assert packet == bytes.fromhex("a5b61006052f000000003c")
+        assert verify_checksum(packet)
+
     def test_build_settings_low(self):
         """Test settings packet for LOW airflow."""
         packet = build_settings_packet(
-            preheat_enabled=True,
             summer_limit_enabled=True,
             preheat_temp=16,
             airflow=AIRFLOW_LOW,
@@ -110,7 +122,6 @@ class TestPacketBuilding:
     def test_build_settings_medium(self):
         """Test settings packet for MEDIUM airflow."""
         packet = build_settings_packet(
-            preheat_enabled=True,
             summer_limit_enabled=True,
             preheat_temp=16,
             airflow=AIRFLOW_MEDIUM,
@@ -118,6 +129,7 @@ class TestPacketBuilding:
         # Verify structure: magic + type + header + flags + temp + airflow bytes + checksum
         assert packet[:2] == b"\xa5\xb6"  # magic
         assert packet[2] == 0x1a  # type
+        assert packet[6] == 0x02  # byte 6 is always 0x02
         assert packet[9] == 0x28  # airflow byte 1 for MEDIUM
         assert packet[10] == 0x15  # airflow byte 2 for MEDIUM
         assert verify_checksum(packet)
@@ -125,7 +137,6 @@ class TestPacketBuilding:
     def test_build_settings_high(self):
         """Test settings packet for HIGH airflow."""
         packet = build_settings_packet(
-            preheat_enabled=True,
             summer_limit_enabled=True,
             preheat_temp=16,
             airflow=AIRFLOW_HIGH,
@@ -136,18 +147,18 @@ class TestPacketBuilding:
     def test_build_settings_invalid_airflow(self):
         """Test settings packet with invalid airflow raises."""
         with pytest.raises(ValueError, match="Airflow must be"):
-            build_settings_packet(True, True, 16, 150)
+            build_settings_packet(True, 16, 150)
 
-    def test_build_settings_preheat_disabled(self):
-        """Test settings packet with preheat disabled."""
+    def test_build_settings_summer_limit_disabled(self):
+        """Test settings packet with summer limit disabled."""
         packet = build_settings_packet(
-            preheat_enabled=False,
-            summer_limit_enabled=True,
+            summer_limit_enabled=False,
             preheat_temp=16,
             airflow=AIRFLOW_MEDIUM,
         )
-        # Byte 6 should be 0x00 for preheat disabled
-        assert packet[6] == 0x00
+        # Byte 6 is always 0x02, byte 7 should be 0x00 for summer limit disabled
+        assert packet[6] == 0x02
+        assert packet[7] == 0x00
         assert verify_checksum(packet)
 
 
@@ -173,8 +184,8 @@ class TestStatusParsing:
         packet[42] = 11  # probe 2 temp
         packet[44] = 0  # boost off
         packet[47] = 104  # airflow indicator (MEDIUM = 0x68)
-        packet[49] = 0x02  # preheat on
         packet[50] = 0x02  # summer limit on
+        packet[53] = 0x01  # preheat on
         packet[56] = 16  # preheat temp
 
         status = parse_status(bytes(packet))

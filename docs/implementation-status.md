@@ -11,7 +11,8 @@ This document tracks which protocol features from [protocol.md](protocol.md) are
 | Sensor Request (0x10, param 0x07) | Yes | Yes | `build_sensor_request()` |
 | Sensor Select Request (0x10, param 0x18) | Yes | Yes | `build_sensor_select_request(sensor)` — verified 2026-02-05 |
 | BOOST ON/OFF (0x10, param 0x19) | Yes | Yes | `build_boost_command()` |
-| Settings (0x1a) - airflow/preheat/summer | Yes | Yes | `build_settings_packet()` |
+| Preheat Toggle (0x10, param 0x2F) | Yes | Yes | `build_preheat_request()` |
+| Settings (0x1a) - airflow/summer/temp | Yes | Yes | `build_settings_packet()` |
 | Holiday Command (0x10, param 0x1a) | Yes | Yes | `build_holiday_command(days)`, `VisionAirClient.set_holiday()` / `clear_holiday()` |
 | Holiday Status Query (0x10, param 0x2c) | Yes | Yes | `build_holiday_status_query()` |
 | Night Ventilation (0x1a, byte7=0x04) — hypothetical | Partial | Experimental | `build_night_ventilation_activate()` — [#6](https://github.com/bartcortooms/visionair-ble/issues/6) |

@@ -232,7 +232,7 @@ class VMICtl:
         print(path)
         return path
 
-    def session_checkpoint(self, session_dir: Path) -> Path:
+    def session_checkpoint(self, session_dir: Path, *, note: str | None = None) -> Path:
         count_file = session_dir / "checkpoint_count.txt"
         count = int(count_file.read_text(encoding="utf-8").strip() or "0") + 1
         count_file.write_text(str(count), encoding="utf-8")
@@ -244,6 +244,8 @@ class VMICtl:
 
         with (session_dir / "checkpoints.txt").open("a", encoding="utf-8") as fh:
             fh.write(f"\n[checkpoint_{count}]\ntimestamp={ts_iso}\nscreenshot={shot.name}\n")
+            if note:
+                fh.write(f"notes={note}\n")
 
         print(shot)
         return shot

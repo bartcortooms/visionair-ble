@@ -153,16 +153,27 @@ This "get all data" request triggers the device to send a sequence of responses:
 | BOOST ON | `a5b610060519000000010b` | Enable 30-min BOOST |
 | BOOST OFF | `a5b610060519000000000a` | Disable BOOST |
 
+#### Preheat Toggle (type 0x10, param 0x2F)
+
+Toggles winter preheat on or off. This is a separate command from the Settings packet.
+
+| Command | Packet | Description |
+|---------|--------|-------------|
+| Preheat ON | `a5b61006052f000000013d` | Enable preheat |
+| Preheat OFF | `a5b61006052f000000003c` | Disable preheat |
+
+The preheat state is reflected in DEVICE_STATE byte 53 (`0x01`=ON, `0x00`=OFF).
+
 #### Settings Command (type 0x1a)
 
-Structure: `a5b6 1a 06 06 1a <preheat> <mode> <temp> <af1> <af2> <checksum>`
+Structure: `a5b6 1a 06 06 1a <b6> <mode> <temp> <af1> <af2> <checksum>`
 
 | Offset | Size | Description |
 |--------|------|-------------|
 | 0-1 | 2 | Magic `a5b6` |
 | 2 | 1 | Type `0x1a` |
 | 3-5 | 3 | Header `06 06 1a` |
-| 6 | 1 | Preheat enabled: `0x02`=ON, `0x00`=OFF |
+| 6 | 1 | Always `0x02` in captures (not the preheat toggle — see REQUEST 0x2F) |
 | 7 | 1 | Mode byte (see below) |
 | 8 | 1 | Preheat temperature (°C) |
 | 9 | 1 | Airflow byte 1 |
@@ -374,8 +385,9 @@ Responses arrive as notifications on characteristic handle 0x000e. Subscribe by 
 | 44 | 1 | BOOST active | 0=OFF, 1=ON |
 | 47 | 1 | Airflow indicator | 38/104/194 |
 | 48 | 1 | Airflow mode | 1=MID/MAX, 2=MIN |
-| 49 | 1 | Preheat enabled | `0x02`=ON |
+| 49 | 1 | Unknown | Changed by firmware update (not preheat) |
 | 50 | 1 | Summer limit enabled | `0x02`=ON |
+| 53 | 1 | Preheat enabled | `0x01`=ON, `0x00`=OFF |
 | 54 | 1 | Diagnostic status bitfield | `0x0F`=all OK |
 | 56 | 1 | Preheat temperature (°C) | 16 |
 

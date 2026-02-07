@@ -82,6 +82,7 @@ For phone setup, ADB connection, BT snoop logging details, and troubleshooting, 
 | `fan-mid` | Set to MEDIUM (164 m³/h) |
 | `fan-max` | Set to HIGH (201 m³/h) |
 | `boost` | Activate BOOST mode |
+| `preheat-toggle` | Toggle preheat ON/OFF |
 
 ### Holiday Mode (from Special modes screen)
 | Command | Description |
@@ -106,7 +107,7 @@ For phone setup, ADB connection, BT snoop logging details, and troubleshooting, 
 | `btstart` | Enable logging (basic, may be filtered) |
 | `btpull` | Pull btsnoop logs via bugreport |
 | `session-start <name>` | Start capture session, outputs directory path |
-| `session-checkpoint <dir>` | Take timestamped screenshot, outputs image path |
+| `session-checkpoint <dir> [note]` | Take timestamped screenshot with optional note |
 | `session-end <dir>` | End session, pull btsnoop logs |
 | `collect-sensors [--force]` | Build timestamped UI+packet evidence session for sensor analysis |
 | `should-collect` | Check if sensor collection is due |

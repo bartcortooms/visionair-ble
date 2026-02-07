@@ -32,6 +32,7 @@ from .protocol import (
     build_boost_command,
     build_full_data_request,
     build_holiday_command,
+    build_preheat_request,
     build_schedule_config_request,
     build_schedule_toggle,
     build_schedule_write,
@@ -329,7 +330,6 @@ class VisionAirClient:
     async def set_airflow_mode(
         self,
         mode: str,
-        preheat_enabled: bool | None = None,
         summer_limit_enabled: bool | None = None,
         preheat_temp: int | None = None,
         timeout: float = 10.0,
@@ -339,12 +339,13 @@ class VisionAirClient:
         This is the recommended method for controlling airflow, as it works
         with any installation regardless of configured volume.
 
+        Note: preheat on/off is controlled separately via set_preheat().
+
         Settings not explicitly provided will be preserved from the device's
         current state (fetched automatically if needed).
 
         Args:
             mode: Airflow mode ("low", "medium", or "high")
-            preheat_enabled: Enable winter preheat (None = keep current)
             summer_limit_enabled: Enable summer limit (None = keep current)
             preheat_temp: Preheat temperature in °C (None = keep current)
             timeout: How long to wait for acknowledgment
@@ -363,13 +364,12 @@ class VisionAirClient:
         # Map mode to protocol airflow value (these are protocol constants)
         airflow = {"low": AIRFLOW_LOW, "medium": AIRFLOW_MEDIUM, "high": AIRFLOW_HIGH}[mode]
         return await self.set_airflow(
-            airflow, preheat_enabled, summer_limit_enabled, preheat_temp, timeout
+            airflow, summer_limit_enabled, preheat_temp, timeout
         )
 
     async def set_airflow(
         self,
         airflow: int,
-        preheat_enabled: bool | None = None,
         summer_limit_enabled: bool | None = None,
         preheat_temp: int | None = None,
         timeout: float = 10.0,
@@ -381,12 +381,13 @@ class VisionAirClient:
         installation's configured volume. Consider using set_airflow_mode()
         instead for clearer code.
 
+        Preheat on/off is controlled separately via set_preheat().
+
         Settings not explicitly provided will be preserved from the device's
         current state (fetched automatically if needed).
 
         Args:
             airflow: Protocol airflow value (131=LOW, 164=MEDIUM, 201=HIGH)
-            preheat_enabled: Enable winter preheat (None = keep current)
             summer_limit_enabled: Enable summer limit (None = keep current)
             preheat_temp: Preheat temperature in °C (None = keep current)
             timeout: How long to wait for acknowledgment
@@ -411,13 +412,9 @@ class VisionAirClient:
 
         current = self._last_status
         if current is None:
-            preheat = preheat_enabled if preheat_enabled is not None else True
             summer = summer_limit_enabled if summer_limit_enabled is not None else True
             temp = preheat_temp if preheat_temp is not None else 16
         else:
-            preheat = (
-                preheat_enabled if preheat_enabled is not None else current.preheat_enabled
-            )
             summer = (
                 summer_limit_enabled
                 if summer_limit_enabled is not None
@@ -425,7 +422,7 @@ class VisionAirClient:
             )
             temp = preheat_temp if preheat_temp is not None else current.preheat_temp
 
-        packet = build_settings_packet(preheat, summer, temp, airflow)
+        packet = build_settings_packet(summer, temp, airflow)
 
         ack_received = asyncio.Event()
 
@@ -565,28 +562,40 @@ class VisionAirClient:
     async def set_preheat(
         self,
         enabled: bool,
-        temperature: int | None = None,
+        timeout: float = 10.0,
     ) -> DeviceStatus:
         """Enable or disable winter preheat.
 
+        Uses REQUEST param 0x2F to toggle preheat on/off.
+        To change the preheat temperature, use set_airflow_mode(preheat_temp=...).
+
         Args:
             enabled: Whether to enable preheat
-            temperature: Target temperature in °C (None = keep current)
+            timeout: How long to wait for acknowledgment
 
         Returns:
             Updated DeviceStatus
         """
-        if self._last_status is None:
-            await self.get_status()
+        self._find_characteristics()
 
-        current = self._last_status
-        mode = current.airflow_mode if current and current.airflow_mode != "unknown" else "medium"
+        packet = build_preheat_request(enabled)
 
-        return await self.set_airflow_mode(
-            mode=mode,
-            preheat_enabled=enabled,
-            preheat_temp=temperature,
-        )
+        ack_received = asyncio.Event()
+
+        def handler(*args: Any) -> None:
+            data = args[-1]
+            if bytes(data[:2]) == MAGIC and data[2] == PacketType.SETTINGS_ACK:
+                ack_received.set()
+
+        await self._client.start_notify(self._status_char, handler)
+        try:
+            await self._client.write_gatt_char(self._command_char, packet, response=True)
+            await asyncio.wait_for(ack_received.wait(), timeout=timeout)
+        finally:
+            await self._client.stop_notify(self._status_char)
+
+        await asyncio.sleep(0.5)
+        return await self.get_status()
 
     async def set_summer_limit(self, enabled: bool) -> DeviceStatus:
         """Enable or disable summer limit.

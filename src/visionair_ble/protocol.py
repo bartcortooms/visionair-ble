@@ -153,6 +153,7 @@ class RequestParam:
     SCHEDULE_QUERY = 0x26       # Request schedule query (triggers 0x47 response)
     SCHEDULE_CONFIG = 0x27      # Request schedule config (triggers 0x46 response)
     HOLIDAY_STATUS = 0x2C       # Query holiday mode status
+    PREHEAT = 0x2F              # Toggle preheat (value: 0=OFF, 1=ON)
 
 
 class SettingsMode:
@@ -207,8 +208,9 @@ class DeviceStateOffset:
     HOLIDAY_DAYS = 43            # Holiday days remaining (0=OFF)
     BOOST_ACTIVE = 44
     AIRFLOW_INDICATOR = 47      # 38=low, 104=medium, 194=high
-    PREHEAT_ENABLED = 49
+    UNKNOWN_49 = 49                # Changed by firmware update; NOT preheat (see byte 53)
     SUMMER_LIMIT_ENABLED = 50
+    PREHEAT_ENABLED = 53            # Preheat on/off (toggled via REQUEST param 0x2F)
     PREHEAT_TEMP = 56
 
 
@@ -592,6 +594,22 @@ def build_boost_command(enable: bool) -> bytes:
     return build_request(RequestParam.BOOST, value=1 if enable else 0, extended=True)
 
 
+def build_preheat_request(enable: bool) -> bytes:
+    """Build a preheat toggle command packet.
+
+    Toggles preheat mode on or off. This is a separate command from the
+    SETTINGS packet — the SETTINGS packet controls airflow/temperature,
+    while this REQUEST controls the preheat on/off state.
+
+    Args:
+        enable: True to enable preheat, False to disable
+
+    Returns:
+        Complete packet bytes
+    """
+    return build_request(RequestParam.PREHEAT, value=1 if enable else 0, extended=True)
+
+
 # =============================================================================
 # Special Modes (Holiday, Night Ventilation, Fixed Air Flow)
 # =============================================================================
@@ -762,15 +780,16 @@ def build_schedule_write(config: ScheduleConfig) -> bytes:
 
 
 def build_settings_packet(
-    preheat_enabled: bool,
     summer_limit_enabled: bool,
     preheat_temp: int,
     airflow: int,
 ) -> bytes:
     """Build a settings command packet.
 
+    Controls airflow level, preheat temperature, and summer limit.
+    Note: preheat on/off is toggled separately via build_preheat_request().
+
     Args:
-        preheat_enabled: Enable winter preheat
         summer_limit_enabled: Enable summer limit
         preheat_temp: Target temperature in °C (typically 14-22)
         airflow: Airflow mode (AirflowLevel.LOW/MEDIUM/HIGH or 131/164/201)
@@ -795,7 +814,7 @@ def build_settings_packet(
         0x06,
         0x06,
         0x1A,
-        0x02 if preheat_enabled else 0x00,
+        0x02,  # Constant in phone app captures (not the preheat toggle)
         0x02 if summer_limit_enabled else 0x00,
         preheat_temp,
         af_b1,

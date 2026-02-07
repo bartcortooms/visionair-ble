@@ -231,7 +231,7 @@ def decode_device_state_packet(hex_data: str) -> dict:
         # Settings
         'airflow_indicator': data[47],
         'airflow_m3h': airflow_map.get(data[47], f'?{data[47]}'),
-        'preheat_enabled': data[49] != 0,
+        'preheat_enabled': data[53] != 0,
         'preheat_temp': data[56],
         'summer_limit_enabled': data[50] != 0,
         # Potential humidity fields to investigate
@@ -272,7 +272,7 @@ def decode_settings_packet(hex_data: str) -> dict:
         return {'error': 'Packet too short'}
 
     return {
-        'preheat_enabled': data[6] == 0x02,
+        'byte6': data[6],  # Always 0x02 in captures (not preheat toggle)
         'summer_enabled': data[7] == 0x02,
         'preheat_temp': data[8],
         'airflow_b1': data[9],
@@ -335,7 +335,7 @@ def print_summary(packets: dict, output_format: str = 'text'):
             print(f"\n  {pkt['type_name']}: {pkt['hex']}")
             if pkt['type'] == 0x1a:
                 decoded = decode_settings_packet(pkt['hex'])
-                print(f"    Preheat: {'ON' if decoded['preheat_enabled'] else 'OFF'} at {decoded['preheat_temp']}°C")
+                print(f"    Preheat temp: {decoded['preheat_temp']}°C")
                 print(f"    Summer: {'ON' if decoded['summer_enabled'] else 'OFF'}")
                 print(f"    Airflow: ({decoded['airflow_b1']}, {decoded['airflow_b2']})")
 

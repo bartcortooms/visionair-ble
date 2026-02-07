@@ -182,9 +182,15 @@ def _cmd_session_start(ctl: VMICtl, args: list[str]) -> int:
     return 0
 
 
+def _cmd_preheat_toggle(ctl: VMICtl, args: list[str]) -> int:
+    ctl.ui.tap_home_tile(4)
+    return 0
+
+
 def _cmd_session_checkpoint(ctl: VMICtl, args: list[str]) -> int:
-    _require_args(args, 1, "session-checkpoint requires <session_dir>")
-    ctl.session_checkpoint(Path(args[0]))
+    _require_args(args, 1, "session-checkpoint requires <session_dir> [note]")
+    note = " ".join(args[1:]) if len(args) > 1 else None
+    ctl.session_checkpoint(Path(args[0]), note=note)
     return 0
 
 
@@ -242,6 +248,7 @@ def get_command_specs() -> dict[str, CommandSpec]:
         CommandSpec("fan-mid", "Tap fan medium tile", _cmd_fan(1)),
         CommandSpec("fan-max", "Tap fan high tile", _cmd_fan(2)),
         CommandSpec("boost", "Tap boost tile", _cmd_fan(3)),
+        CommandSpec("preheat-toggle", "Toggle preheat on/off", _cmd_preheat_toggle),
         CommandSpec("airflow-min", "Set simplified airflow to minimum", _cmd_airflow_min),
         CommandSpec("airflow-max", "Set simplified airflow to maximum", _cmd_airflow_max),
         CommandSpec("airflow", "Drag simplified airflow slider", _cmd_airflow),
