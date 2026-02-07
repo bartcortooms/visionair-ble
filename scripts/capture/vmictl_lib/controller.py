@@ -25,6 +25,8 @@ class VMICtl:
         self.last_sensor_checkpoint_file = self.capture_data_dir / "last_sensor_checkpoint.txt"
         self.sensor_checkpoint_interval_minutes = 15
         self._last_battery_check_file = self.capture_data_dir / "last_battery_check.txt"
+        self._current_session_file = self.capture_data_dir / "current_session.txt"
+        self._actions_log_file = self.capture_data_dir / "vmi_actions.log"
 
     def _adb_base(self) -> list[str]:
         cmd = ["adb"]
@@ -229,6 +231,7 @@ class VMICtl:
         path.mkdir(parents=True, exist_ok=True)
         (path / "session_start.txt").write_text(time.strftime("%Y-%m-%dT%H:%M:%S%z"), encoding="utf-8")
         (path / "checkpoint_count.txt").write_text("0", encoding="utf-8")
+        self._current_session_file.write_text(str(path), encoding="utf-8")
         print(path)
         return path
 
@@ -255,6 +258,8 @@ class VMICtl:
             fh.write(f"note={note}\n")
 
     def session_end(self, session_dir: Path) -> Path:
+        if self._current_session_file.exists():
+            self._current_session_file.unlink()
         (session_dir / "session_end.txt").write_text(time.strftime("%Y-%m-%dT%H:%M:%S%z"), encoding="utf-8")
         bugreport = session_dir / "bugreport.zip"
         self.adb_run("bugreport", str(bugreport))
@@ -271,6 +276,31 @@ class VMICtl:
 
         print(log_path)
         return log_path
+
+    # -- VMI action tracking -------------------------------------------------
+
+    def current_session(self) -> Path | None:
+        """Return the active session directory, or ``None``."""
+        if not self._current_session_file.exists():
+            return None
+        path = Path(self._current_session_file.read_text(encoding="utf-8").strip())
+        if path.is_dir() and (path / "checkpoint_count.txt").exists():
+            return path
+        return None
+
+    def log_vmi_action(self, command: str, args: list[str]) -> None:
+        """Record a VMI-modifying action to the persistent log and, if a
+        session is active, take an automatic checkpoint."""
+        ts = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+        args_str = " ".join(args) if args else ""
+        entry = f"{ts} {command}" + (f" {args_str}" if args_str else "") + "\n"
+        with self._actions_log_file.open("a", encoding="utf-8") as fh:
+            fh.write(entry)
+
+        session = self.current_session()
+        if session is not None:
+            note = f"action={command}" + (f" {args_str}" if args_str else "")
+            self.session_checkpoint(session, note=note)
 
     # -- Battery monitoring --------------------------------------------------
 

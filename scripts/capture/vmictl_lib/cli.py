@@ -55,7 +55,10 @@ def main(argv: list[str] | None = None) -> int:
     ctl = VMICtl(adb_target=os.environ.get("ADB_TARGET", ""), project_root=project_root)
     try:
         ctl.maybe_warn_battery()
-        return spec.handler(ctl, args)
+        rc = spec.handler(ctl, args)
+        if rc == 0 and spec.modifies_vmi:
+            ctl.log_vmi_action(command, args)
+        return rc
     except Exception as exc:  # noqa: BLE001
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1

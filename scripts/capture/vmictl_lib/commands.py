@@ -12,6 +12,7 @@ class CommandSpec:
     name: str
     help: str
     handler: Callable[[VMICtl, list[str]], int]
+    modifies_vmi: bool = False
 
 
 def _require_args(args: list[str], count: int, msg: str) -> None:
@@ -240,20 +241,20 @@ def get_command_specs() -> dict[str, CommandSpec]:
         CommandSpec("vmci", "Tap VMCI device type", _cmd_vmci),
         CommandSpec("pair", "Tap PAIR", _cmd_pair),
         CommandSpec("dismiss", "Dismiss firmware dialog if visible", _cmd_dismiss),
-        CommandSpec("firmware-update", "Accept firmware update if dialog visible", _cmd_firmware_update),
+        CommandSpec("firmware-update", "Accept firmware update if dialog visible", _cmd_firmware_update, modifies_vmi=True),
         CommandSpec("sensor-probe1", "Select Probe 1", _cmd_sensor("probe1")),
         CommandSpec("sensor-probe2", "Select Probe 2", _cmd_sensor("probe2")),
         CommandSpec("sensor-remote", "Select Remote sensor", _cmd_sensor("remote")),
-        CommandSpec("fan-min", "Tap fan low tile", _cmd_fan(0)),
-        CommandSpec("fan-mid", "Tap fan medium tile", _cmd_fan(1)),
-        CommandSpec("fan-max", "Tap fan high tile", _cmd_fan(2)),
-        CommandSpec("boost", "Tap boost tile", _cmd_fan(3)),
-        CommandSpec("preheat-toggle", "Toggle preheat on/off", _cmd_preheat_toggle),
-        CommandSpec("airflow-min", "Set simplified airflow to minimum", _cmd_airflow_min),
-        CommandSpec("airflow-max", "Set simplified airflow to maximum", _cmd_airflow_max),
-        CommandSpec("airflow", "Drag simplified airflow slider", _cmd_airflow),
-        CommandSpec("holiday-toggle", "Toggle holiday mode", _cmd_holiday_toggle),
-        CommandSpec("holiday-days", "Set holiday days", _cmd_holiday_days),
+        CommandSpec("fan-min", "Tap fan low tile", _cmd_fan(0), modifies_vmi=True),
+        CommandSpec("fan-mid", "Tap fan medium tile", _cmd_fan(1), modifies_vmi=True),
+        CommandSpec("fan-max", "Tap fan high tile", _cmd_fan(2), modifies_vmi=True),
+        CommandSpec("boost", "Tap boost tile", _cmd_fan(3), modifies_vmi=True),
+        CommandSpec("preheat-toggle", "Toggle preheat on/off", _cmd_preheat_toggle, modifies_vmi=True),
+        CommandSpec("airflow-min", "Set simplified airflow to minimum", _cmd_airflow_min, modifies_vmi=True),
+        CommandSpec("airflow-max", "Set simplified airflow to maximum", _cmd_airflow_max, modifies_vmi=True),
+        CommandSpec("airflow", "Drag simplified airflow slider", _cmd_airflow, modifies_vmi=True),
+        CommandSpec("holiday-toggle", "Toggle holiday mode", _cmd_holiday_toggle, modifies_vmi=True),
+        CommandSpec("holiday-days", "Set holiday days", _cmd_holiday_days, modifies_vmi=True),
         CommandSpec("holiday-state", "Read holiday state", _cmd_holiday_state),
         CommandSpec("schedule-edition", "Time slots: switch to EDITION tab", _cmd_schedule_tab("edition")),
         CommandSpec("schedule-planning", "Time slots: switch to PLANNING tab", _cmd_schedule_tab("planning")),
