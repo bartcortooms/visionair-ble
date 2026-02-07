@@ -37,15 +37,13 @@ Most tests are read-only. The holiday mode test (`TestHolidayMode`) briefly acti
 
 ## Code Style
 
-### Keep code clean and evergreen
-- Do not add backward compatibility aliases or shims - this library has no real users
-- Do not reference what things were "formerly" called or historical naming
-- Comments should describe what code does now, not its history
-
-### Comments
-- Keep comments concise and relevant
-- Do not add unnecessary historical context
-- Avoid phrases like "formerly known as", "was previously", "vendor calls it"
+### Write for newcomers, not for historians
+- Code comments and docs describe **what things are now**, never what they used to be or how they changed
+- A reader unfamiliar with the project's history should be able to understand everything without context about past mistakes or refactors
+- Do not add backward compatibility aliases or shims — this library has no real users
+- Never use phrases like "formerly known as", "was previously", "NOT X (see Y)", "changed from", "used to be", "was wrong"
+- If you need to record *why* something changed, put that in `docs/logbook/` — not in code comments or docs
+- Code history is in git; discoveries and investigations go in the logbook; code and docs only describe the present
 
 ### Naming
 - Use names that accurately reflect the actual purpose/content

@@ -23,8 +23,8 @@ Packet types:
 - SETTINGS (0x1a): Configuration changes
 - SETTINGS_ACK (0x23): Acknowledgment of settings
 
-Note: The DEVICE_STATE packet temperatures (bytes 8/35/42) are often stale.
-Use PROBE_SENSORS packet or get_sensors() for accurate probe readings.
+For accurate probe temperatures, use the PROBE_SENSORS packet or get_sensors().
+DEVICE_STATE bytes 35/42 are unreliable for probe readings.
 """
 
 from __future__ import annotations
@@ -190,25 +190,25 @@ class DeviceStateOffset:
     """Field offsets in device state packet (type 0x01, 182 bytes).
 
     This packet contains device configuration, settings, and Remote sensor data.
-    Probe temperatures here (bytes 35, 42) are often stale - use PROBE_SENSORS packet.
+    Probe temperatures at bytes 35/42 are unreliable — use PROBE_SENSORS packet instead.
     """
 
     TYPE = 2
     HUMIDITY = 4                # Humidity % from remote (1 byte)
     UNKNOWN_5_7 = 5             # Constant per device (3 bytes) - possibly device identifier
-    UNKNOWN_8 = 8               # Always 18 in captures - NOT live temp (see TEMP_ACTIVE)
+    UNKNOWN_8 = 8               # Always 18 in captures, purpose unknown
     CONFIGURED_VOLUME = 22      # 2 bytes, little-endian
     OPERATING_DAYS = 26         # 2 bytes, little-endian
     FILTER_DAYS = 28            # 2 bytes, little-endian
     TEMP_ACTIVE = 32            # Live temp for selected sensor (per SENSOR_SELECTOR)
     SENSOR_SELECTOR = 34        # Current sensor source (0/1/2)
-    TEMP_PROBE1 = 35            # Outlet temp (may be stale)
+    TEMP_PROBE1 = 35            # Outlet temp (unreliable, use PROBE_SENSORS)
     SUMMER_LIMIT_TEMP = 38
-    TEMP_PROBE2 = 42            # Inlet temp (may be stale)
+    TEMP_PROBE2 = 42            # Inlet temp (unreliable, use PROBE_SENSORS)
     HOLIDAY_DAYS = 43            # Holiday days remaining (0=OFF)
     BOOST_ACTIVE = 44
     AIRFLOW_INDICATOR = 47      # 38=low, 104=medium, 194=high
-    UNKNOWN_49 = 49                # NOT preheat (see byte 53)
+    UNKNOWN_49 = 49                # Purpose unknown
     SUMMER_LIMIT_ENABLED = 50
     PREHEAT_ENABLED = 53            # Preheat on/off (toggled via REQUEST param 0x2F)
     PREHEAT_TEMP = 56
@@ -301,7 +301,7 @@ class DeviceStatus:
     """Device state from DEVICE_STATE packet (type 0x01).
 
     Contains device configuration, settings, and Remote sensor readings.
-    Probe temperatures here are often stale - use SensorData from PROBE_SENSORS packet.
+    For reliable probe temperatures, use SensorData from PROBE_SENSORS packet.
 
     Fields with sensor metadata will be auto-discovered by the HA integration.
     """
@@ -376,7 +376,7 @@ class SensorData:
     """Probe sensor data from PROBE_SENSORS packet (type 0x03).
 
     Contains current/live temperature and humidity readings from probes.
-    The DEVICE_STATE packet (0x01) temperatures are often stale.
+    This is the reliable source for probe readings.
     """
 
     temp_probe1: int | None = field(default=None, metadata=sensor(
@@ -673,9 +673,8 @@ def _raise_special_mode_unsupported(feature: str, *, _experimental: bool) -> Non
     _require_experimental(_experimental, feature)
     raise ExperimentalFeatureError(
         f"{feature} encoding is unknown. "
-        "In legacy captures, byte 8 appeared to be a sequence counter and "
-        "bytes 9-10 were mode-specific. This SETTINGS-based path (byte7=0x04) "
-        "has not been observed in current captures. "
+        "The SETTINGS-based path (byte7=0x04) for this feature has not been "
+        "observed in captures. "
         "We cannot generate valid packets without the encoding algorithm."
     )
 
@@ -903,7 +902,7 @@ def parse_status(data: bytes) -> DeviceStatus | None:
         sensor_selector=sensor_selector,
         sensor_name=sensor_name,
         # Use live temperature from byte 32 only when that sensor is selected.
-        # DEVICE_STATE packet bytes 8/35/42 are stale - use get_sensors() for accurate readings.
+        # For reliable probe readings, use get_sensors() (PROBE_SENSORS packet).
         temp_remote=(
             data[DeviceStateOffset.TEMP_ACTIVE] if sensor_selector == 2 and len(data) > DeviceStateOffset.TEMP_ACTIVE
             else None

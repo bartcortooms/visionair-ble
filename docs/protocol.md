@@ -372,20 +372,20 @@ Responses arrive as notifications on characteristic handle 0x000e. Subscribe by 
 | 2 | 1 | Type | `0x01` |
 | 4 | 1 | Remote humidity (%) | 55 |
 | 5-7 | 3 | Unknown (constant per device) | `68 25 40` |
-| 8 | 1 | **Unknown** - always 18, not live temp | 18 |
+| 8 | 1 | Unknown (always 18 in captures) | 18 |
 | 22-23 | 2 | Configured volume (m³) (LE u16) | 363 |
 | 26-27 | 2 | Operating days (LE u16) | 634 |
 | 28-29 | 2 | Filter life days (LE u16) | 330 |
 | 32 | 1 | **Live temperature** for selected sensor (see byte 34) | 19 |
 | 34 | 1 | Sensor selector | 0/1/2 |
-| 35 | 1 | Probe 1 temperature (°C) — **often stale** | 16 |
+| 35 | 1 | Probe 1 temperature (°C) — unreliable, use PROBE_SENSORS | 16 |
 | 38 | 1 | Summer limit temp threshold (°C) | 26 |
-| 42 | 1 | Probe 2 temperature (°C) — **often stale** | 11 |
+| 42 | 1 | Probe 2 temperature (°C) — unreliable, use PROBE_SENSORS | 11 |
 | 43 | 1 | Holiday days remaining | 0=OFF, N=days |
 | 44 | 1 | BOOST active | 0=OFF, 1=ON |
 | 47 | 1 | Airflow indicator | 38/104/194 |
 | 48 | 1 | Airflow mode | 1=MID/MAX, 2=MIN |
-| 49 | 1 | Unknown | Not preheat (see byte 53) |
+| 49 | 1 | Unknown | — |
 | 50 | 1 | Summer limit enabled | `0x02`=ON |
 | 53 | 1 | Preheat enabled | `0x01`=ON, `0x00`=OFF |
 | 54 | 1 | Diagnostic status bitfield | `0x0F`=all OK |
@@ -448,8 +448,7 @@ The app's "Time slot configuration" UI shows:
 
 ### 5.3 Probe Sensors Packet (type 0x03)
 
-Contains current/live probe readings. Despite vendor documentation calling this "HISTORY",
-it contains current measurements, not historical data.
+Contains current/live probe temperature and humidity readings.
 
 | Offset | Size | Description |
 |--------|------|-------------|
@@ -498,8 +497,8 @@ the device has limited notification throughput through BLE proxies. See
 `VisionAirClient.get_fresh_status()` for the implementation.
 
 > **Note:** The Device State packet also contains Probe 1/2 temperatures at
-> bytes 35 and 42, but these are often stale. Use PROBE_SENSORS for reliable
-> probe readings.
+> bytes 35 and 42, but these are unreliable. Use PROBE_SENSORS for probe
+> readings.
 
 ## 7. Data Encoding Reference
 
