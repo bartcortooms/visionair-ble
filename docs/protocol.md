@@ -72,7 +72,14 @@ XOR all payload bytes (everything between magic prefix and checksum).
 
 ## 4. Commands Reference
 
-Commands are written to characteristic handle 0x0013.
+Commands are written to characteristic handle 0x0013. There are two main command types:
+
+- **REQUEST (0x10):** General-purpose command envelope used for both data queries
+  and state changes (airflow mode, boost, preheat, holiday, schedule toggle). The
+  specific operation is determined by the parameter byte. This is the primary way
+  the phone app interacts with the device.
+- **SETTINGS (0x1a):** Bulk configuration writes for parameters sent as a group
+  (summer limit temperature, airflow volume bytes). Less commonly used than REQUEST.
 
 ### 4.1 Device State & Sensor Queries
 
@@ -96,37 +103,25 @@ Requests the Probe Sensors packet (0x03) containing current probe readings.
 a5b6 10 06 05 07 00 00 00 00 14
 ```
 
-Returns current probe temperatures and humidity (not historical data despite vendor naming).
+Returns current probe temperatures and humidity.
 
-#### Sensor Select Request (type 0x10, param 0x18)
+#### Airflow Mode Command (type 0x10, param 0x18)
 
-Requests fresh data for a specific sensor. Byte 7 selects which sensor:
+Sets the device airflow mode. Byte 9 carries the mode value:
 
-| Byte 7 | Sensor | Packet |
-|--------|--------|--------|
-| 0x00 | Probe 2 (Air inlet) | `a5b610060518000000000b` |
-| 0x01 | Probe 1 (Resistor outlet) | `a5b610060518000000010a` |
-| 0x02 | Remote Control | `a5b6100605180000000209` |
+| Byte 9 | Mode | Packet |
+|--------|------|--------|
+| 0x00 | LOW | `a5b610060518000000000b` |
+| 0x01 | MEDIUM | `a5b610060518000000010a` |
+| 0x02 | HIGH | `a5b6100605180000000209` |
 
-The device responds with a DEVICE_STATE packet, but the response contains
-**stale data from the previously-selected sensor**. The device switches
-internally AFTER sending its response.
+The device responds with an updated DEVICE_STATE packet. The new mode is
+reflected in byte 47 (airflow indicator) and byte 34 (mode index).
 
-To get a fresh reading for the requested sensor, send a follow-up
-Device State Request (param 0x03) and check that byte 34 (selector)
-matches the requested sensor. Timing varies by sensor type:
-
-| Sensor | Switch Speed | Notes |
-|--------|-------------|-------|
-| Probe 1, Probe 2 (wired) | Fast | Usually matches on 1st follow-up |
-| Remote (RF) | Slow | Often needs 2-3 follow-up requests |
-
-> **Important:** The PROBE_SENSORS packet (type 0x03) provides live
-> Probe 1 and Probe 2 temperatures without sensor cycling. Only Remote
-> temperature requires the sensor_select mechanism.
-
-> **Verified (2026-02-05):** Re-analyzed captures confirming byte7 selects
-> the sensor explicitly. The app sends requests in order 0→2→1 to refresh all sensors.
+> **Verified (2026-02-07):** Controlled capture session confirmed values 0/1/2
+> correspond to LOW/MEDIUM/HIGH when the user taps the airflow mode buttons in
+> the phone app. Byte 34 reflects the mode index, and byte 32 shows a temperature
+> that varies by mode (different modes route different sensor readings to byte 32).
 
 #### Full Data Request (type 0x10, param 0x06)
 
@@ -376,8 +371,8 @@ Responses arrive as notifications on characteristic handle 0x000e. Subscribe by 
 | 22-23 | 2 | Configured volume (m³) (LE u16) | 363 |
 | 26-27 | 2 | Operating days (LE u16) | 634 |
 | 28-29 | 2 | Filter life days (LE u16) | 330 |
-| 32 | 1 | **Live temperature** for selected sensor (see byte 34) | 19 |
-| 34 | 1 | Sensor selector | 0/1/2 |
+| 32 | 1 | Active temperature — varies by airflow mode (see byte 34) | 19 |
+| 34 | 1 | Airflow mode index (0=LOW, 1=MEDIUM, 2=HIGH) | 0/1/2 |
 | 35 | 1 | Probe 1 temperature (°C) — unreliable, use PROBE_SENSORS | 16 |
 | 38 | 1 | Summer limit temp threshold (°C) | 26 |
 | 42 | 1 | Probe 2 temperature (°C) — unreliable, use PROBE_SENSORS | 11 |
@@ -391,25 +386,30 @@ Responses arrive as notifications on characteristic handle 0x000e. Subscribe by 
 | 54 | 1 | Diagnostic status bitfield | `0x0F`=all OK |
 | 56 | 1 | Preheat temperature (°C) | 16 |
 
-#### Sensor Selector (byte 34)
+#### Airflow Mode Index (byte 34)
 
-| Value | Sensor |
-|-------|--------|
-| 0 | Probe 2 (Air inlet) |
-| 1 | Probe 1 (Resistor outlet) |
-| 2 | Remote Control |
+Reflects the current airflow mode, matching the value sent via REQUEST param 0x18:
+
+| Value | Mode |
+|-------|------|
+| 0 | LOW |
+| 1 | MEDIUM |
+| 2 | HIGH |
+
+> **Verified (2026-02-07):** Controlled capture session confirmed mode index values.
 
 #### Airflow Indicator (byte 47)
 
 | Value | Mode | ACH Factor |
 |-------|------|------------|
-| 38 (0x26) | LOW | × 0.36 |
-| 104 (0x68) | MEDIUM | × 0.45 |
-| 194 (0xC2) | HIGH | × 0.55 |
+| 104 (0x68) | LOW | × 0.36 |
+| 194 (0xC2) | MEDIUM | × 0.45 |
+| 38 (0x26) | HIGH | × 0.55 |
 
-> **Note:** Like the settings bytes, these values have no obvious mathematical relationship.
-> They may be internal state identifiers or PWM-related values. Use the ACH factors with the
-> configured volume to calculate actual m³/h.
+> **Verified (2026-02-07):** Controlled capture session toggling all three modes
+> on the phone confirmed these mappings. The values have no obvious mathematical
+> relationship — they may be internal state identifiers or PWM-related values.
+> Use the ACH factors with the configured volume to calculate actual m³/h.
 
 #### Diagnostic Status Bitfield (byte 54)
 
@@ -489,8 +489,7 @@ internal sensor selector is pointing at it.
 To collect all sensor readings, the recommended approach is:
 
 1. Send **Probe Sensors Request** (param 0x07) → Probe 1/2 temps + Probe 1 humidity
-2. Send **Sensor Select** (param 0x18, sensor 2) → Switch to Remote
-3. Send **Device State Request** (param 0x03) → Remote temp (byte 32 when selector=2) + Remote humidity (byte 4)
+2. Send **Device State Request** (param 0x03) → Remote humidity (byte 4) + whatever temp is at byte 32
 
 The handler should collect all notifications without filtering by type, since
 the device has limited notification throughput through BLE proxies. See
@@ -500,17 +499,27 @@ the device has limited notification throughput through BLE proxies. See
 > bytes 35 and 42, but these are unreliable. Use PROBE_SENSORS for probe
 > readings.
 
+> **Open question:** Remote temperature at byte 32 depends on the current airflow
+> mode (byte 34). There is no known mechanism to select which sensor's temperature
+> appears at byte 32 without changing the airflow mode. Further investigation needed
+> on how to reliably get Remote temperature.
+
 ## 7. Data Encoding Reference
 
 ### 7.1 Airflow Modes
 
 The protocol supports three discrete airflow modes. The byte pairs in settings commands are internal device references:
 
-| Mode | Settings Bytes | Status Indicator |
-|------|---------------|------------------|
-| LOW | 0x19, 0x0A | 38 (0x26) |
-| MEDIUM | 0x28, 0x15 | 104 (0x68) |
-| HIGH | 0x07, 0x30 | 194 (0xC2) |
+| Mode | REQUEST 0x18 Value | Status Indicator (byte 47) | Settings Bytes (0x1a) |
+|------|-------------------|---------------------------|----------------------|
+| LOW | 0 | 104 (0x68) | 0x19, 0x0A |
+| MEDIUM | 1 | 194 (0xC2) | 0x28, 0x15 |
+| HIGH | 2 | 38 (0x26) | 0x07, 0x30 |
+
+> **Note:** The phone changes airflow mode via REQUEST param 0x18 (the primary
+> mechanism), not via the SETTINGS packet. The SETTINGS airflow bytes (column 4)
+> are also sent by the phone but their exact role is unclear — they may be
+> PWM duty cycle calibration values rather than mode selectors.
 
 ### 7.2 Volume-Based Calculations
 
