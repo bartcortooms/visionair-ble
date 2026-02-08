@@ -250,7 +250,7 @@ Sets the physical fan speed to one of three modes.
 
 The device responds with an updated DEVICE_STATE packet where:
 - Byte 34 matches the requested value
-- Byte 47 (indicator) changes to the corresponding value
+- Byte 47 (indicator) changes to match the mode (LOW=0x68, MEDIUM=0xC2, HIGH=0x26, per the table above)
 - Byte 60 changes (purpose unknown)
 
 When the user taps LOW/MEDIUM/HIGH in the phone app, the phone sends a
@@ -296,8 +296,9 @@ responds with a DEVICE_STATE packet (~130ms) reflecting the new value in
 byte 43 (`holiday_days`).
 
 **Reading holiday status:** Use DEVICE_STATE byte 43, not the 0x50 response.
-The 0x50 response (from `REQUEST` param `0x2c`) is constant and does not
-reflect holiday state.
+The 0x50 response (from `REQUEST` param `0x2c`) returns the same payload
+regardless of whether holiday mode is active or how many days are set. Its
+contents are not understood.
 
 **Response type:** The device responds with DEVICE_STATE (0x01), not
 SETTINGS_ACK (0x23). This differs from SETTINGS commands.
