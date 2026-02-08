@@ -24,11 +24,43 @@ All devices in the Vision'R range advertise as "VisionAir" over BLE:
 | MAC Prefix | `00:A0:50` |
 | Chip | Cypress Semiconductor (PSoC BLE) |
 
-## 2. BLE Interface
+## 2. How the Protocol Works
+
+The VisionAir protocol is simple in structure but spread across multiple response packets. Here's the mental model:
+
+**Interface:** Two BLE GATT characteristics — one for writing commands, one for receiving notifications. That's the entire interface.
+
+**One command type does almost everything:** `REQUEST` (type `0x10`) is the primary command. A single parameter byte selects the operation — querying device state, reading sensors, changing fan speed, toggling preheat, and more. A second type, `SETTINGS` (type `0x1a`), handles clock sync and configuration writes.
+
+**Three main response packets carry all the data:**
+
+| Packet | Type | Contains |
+|--------|------|----------|
+| DEVICE_STATE | `0x01` | Config, mode, boost, preheat, holiday, diagnostics |
+| SCHEDULE | `0x02` | Time slot schedule, **Remote sensor** (temp + humidity) |
+| PROBE_SENSORS | `0x03` | Live probe temperatures and humidity |
+
+**The "get everything" shortcut:** A single `FULL_DATA_Q` request (param `0x06`) triggers all three response packets plus a settings acknowledgment. This is more efficient than querying each individually and is the primary polling method used by the VMI+ phone app.
+
+**Single connection:** The device accepts only one BLE client at a time. Disconnect other clients (phone app, Home Assistant integration) before connecting.
+
+```
+  Client                          VisionAir
+    │                                │
+    │  ── REQUEST (param 0x06) ──►   │   "Get everything"
+    │                                │
+    │  ◄── SETTINGS_ACK (0x23) ──    │
+    │  ◄── DEVICE_STATE (0x01) ──    │   Config + settings
+    │  ◄── SCHEDULE    (0x02) ──     │   Schedule + remote sensor
+    │  ◄── PROBE_SENSORS (0x03) ──   │   Live probe readings
+    │                                │
+```
+
+## 3. Connection & Packet Format
+
+### BLE Services
 
 The device uses Cypress PSoC demo profile UUIDs (vendor reused generic UUIDs).
-
-### Services
 
 | Service UUID | Purpose |
 |-------------|---------|
@@ -56,37 +88,47 @@ The device uses Cypress PSoC demo profile UUIDs (vendor reused generic UUIDs).
 - Serial number is NOT transmitted over BLE (stored locally in app)
 - BOOST mode auto-deactivates after 30 minutes
 
-## 3. Packet Format
+### Packet Framing
 
 All packets use:
 - **Magic prefix:** `0xa5 0xb6`
 - **Checksum:** XOR of all bytes after prefix (excluding checksum byte itself)
 
-### Checksum Calculation
-
-XOR all payload bytes (everything between magic prefix and checksum).
+**Checksum calculation:** XOR all payload bytes (everything between magic prefix and checksum).
 
 **Example:** `a5b6 10 00 05 03 00 00 00 00 16`
 - Payload: `10 00 05 03 00 00 00 00`
 - Checksum: `0x10 ^ 0x00 ^ 0x05 ^ 0x03 ^ 0x00 ^ 0x00 ^ 0x00 ^ 0x00` = `0x16`
 
-## 4. Commands Reference
+## 4. Reading Device Data
 
-Commands are written to characteristic handle 0x0013. There are two main command types:
+All queries use REQUEST (type `0x10`) with a parameter byte selecting which data to retrieve. Responses arrive as notifications on handle 0x000e.
 
-- **REQUEST (0x10):** General-purpose command envelope. Used for data queries
-  (device state, sensors, schedule) and state changes (airflow mode, boost,
-  preheat, holiday). The specific operation is determined by
-  the parameter byte. This is the primary way the phone interacts with the device.
-- **SETTINGS (0x1a):** Configuration writes. The phone sends these periodically
-  with varying byte values. The role of SETTINGS bytes 9-10 is unclear — see
-  [Open Questions](#open-questions).
+### 4.1 Full Data Request (param 0x06)
 
-### 4.1 Device State & Sensor Queries
+The recommended way to poll the device. A single request triggers four response packets:
 
-#### Device State Request (type 0x10, param 0x03)
+```
+a5b6 10 06 05 06 00 00 00 00 15
+```
 
-Requests the Device State packet (0x01) containing device config and Remote sensor data.
+**Response sequence:**
+1. SETTINGS_ACK (type 0x23)
+2. DEVICE_STATE (type 0x01) — device config + Remote sensor
+3. SCHEDULE (type 0x02) — schedule + Remote temp/humidity
+4. PROBE_SENSORS (type 0x03) — current probe readings
+
+> **Discovered (2026-02-05):** Btsnoop analysis shows the VMI app uses this
+> request heavily for polling. It's more efficient than separate DEVICE_STATE and
+> PROBE_SENSORS requests since it gets all data in one request sequence.
+
+**VMI+ app polling pattern:**
+- **Home screen:** DEVICE_STATE_Q + FULL_DATA_Q every ~10 seconds
+- **Measurements screen:** PROBE_SENSORS_Q + FULL_DATA_Q every ~10 seconds
+
+### 4.2 Device State (type 0x01)
+
+**Query:** REQUEST param 0x03
 
 ```
 a5b6 10 00 05 03 00 00 00 00 16
@@ -96,17 +138,94 @@ a5b6 10 00 05 03 00 00 00 00 16
      └─────────────────────── type 0x10 (REQUEST)
 ```
 
-#### Probe Sensors Request (type 0x10, param 0x07)
+**Key response fields** (full byte map in [Reference Tables](#81-device-state-type-0x01-full-byte-map)):
 
-Requests the Probe Sensors packet (0x03) containing current probe readings.
+| Offset | Description | Values |
+|--------|-------------|--------|
+| 4 | Remote humidity (%) | Direct % |
+| 22-23 | Configured volume (m³) (LE u16) | e.g. 363 |
+| 26-27 | Operating days (LE u16) | e.g. 634 |
+| 28-29 | Filter life days (LE u16) | e.g. 330 |
+| 34 | Mode selector | 0=LOW, 1=MEDIUM, 2=HIGH |
+| 43 | Holiday days remaining | 0=OFF, N=days |
+| 44 | BOOST active | 0=OFF, 1=ON |
+| 47 | Airflow indicator | 0x68=LOW, 0xC2=MED, 0x26=HIGH |
+| 50 | Summer limit enabled | 0x02=ON |
+| 53 | Preheat enabled | 0x01=ON, 0x00=OFF |
+| 54 | Diagnostic status bitfield | 0x0F=all OK |
+
+> **Note:** Bytes 35 and 42 contain Probe 1/2 temperatures but are unreliable — use PROBE_SENSORS for probe readings.
+
+### 4.3 Probe Sensors (type 0x03)
+
+**Query:** REQUEST param 0x07
 
 ```
 a5b6 10 06 05 07 00 00 00 00 14
 ```
 
-Returns current probe temperatures and humidity.
+**Response fields** (full byte map in [Reference Tables](#82-probe-sensors-type-0x03-full-byte-map)):
 
-#### Fan Speed Control (type 0x10, param 0x18)
+| Offset | Description |
+|--------|-------------|
+| 6 | Probe 1 temperature (°C) |
+| 8 | Probe 1 humidity (direct %) |
+| 11 | Probe 2 temperature (°C) |
+| 13 | Filter percentage (100 = new) |
+
+> **Note:** This packet does NOT contain Remote sensor data. Remote temperature
+> and humidity are in the **SCHEDULE packet** (type 0x02, bytes 11 and 13),
+> returned by FULL_DATA_Q (param 0x06). Remote humidity is also in
+> DEVICE_STATE byte 4.
+
+### 4.4 Schedule Response (type 0x02)
+
+Contains schedule state and **Remote sensor readings** (temperature and humidity
+from the wireless RF remote control unit). Returned as part of the FULL_DATA_Q
+(param 0x06) response sequence.
+
+**Key fields** (full byte map in [Reference Tables](#83-schedule-type-0x02-full-byte-map)):
+
+| Offset | Description |
+|--------|-------------|
+| 4-7 | Device ID (LE) |
+| **11** | **Remote temperature (direct °C)** |
+| **13** | **Remote humidity (direct %)** |
+| 15 | Days bitmask? `0xff` = all days |
+
+> **Verified (2026-02-08):** Remote temperature and humidity confirmed by moving
+> the wireless remote between rooms with different temperatures:
+>
+> | Location | App Remote temp | byte[11] | App Remote hum | byte[13] |
+> |----------|----------------|----------|----------------|----------|
+> | Bedroom (19°C) | 21°C | 21 | 51% | 51 |
+> | Garage (12°C) | 15°C | 15 | 59% | 59 |
+
+The app's "Time slot configuration" UI shows:
+- 24 hourly slots (0h-23h)
+- Each slot: preheat temp (°C) and mode (1/2/3 = airflow level)
+- Per-day or default configuration
+- "Activating time slots" toggle
+
+### 4.5 Sensor Summary
+
+Sensor data is spread across three packet types. Use FULL_DATA_Q (param 0x06)
+to get all three packets in one request:
+
+| Reading | Packet | Offset | Notes |
+|---------|--------|--------|-------|
+| Remote temperature | SCHEDULE (0x02) | byte 11 | Direct °C |
+| Remote humidity | SCHEDULE (0x02) | byte 13 | Direct % |
+| Remote humidity | DEVICE_STATE (0x01) | byte 4 | Also available here |
+| Probe 1 temperature | PROBE_SENSORS (0x03) | byte 6 | Direct °C |
+| Probe 1 humidity | PROBE_SENSORS (0x03) | byte 8 | Direct % |
+| Probe 2 temperature | PROBE_SENSORS (0x03) | byte 11 | Direct °C |
+
+## 5. Controlling the Device
+
+All control commands use REQUEST (type `0x10`) with a parameter byte. The device typically responds with an updated DEVICE_STATE packet reflecting the change.
+
+### 5.1 Fan Speed (param 0x18)
 
 Sets the physical fan speed to one of three modes.
 
@@ -124,36 +243,23 @@ The device responds with an updated DEVICE_STATE packet where:
 When the user taps LOW/MEDIUM/HIGH in the phone app, the phone sends a
 single 0x18 request with the corresponding value.
 
+**0x18 changes BLE state bytes and the physical fan speed** (verified
+via vibration sensor on 2026-02-08, delta ~+0.007 m/s² for LOW→HIGH across
+two runs). It updates DEVICE_STATE bytes (34/47/48/60), the VMI's RF
+remote control display, and the fan motor speed.
+
 > **Note:** The device has an internal schedule that can autonomously change
 > the mode without any phone command. When testing 0x18 behavior, disable
 > the schedule first to avoid confounding results.
 
-#### Full Data Request (type 0x10, param 0x06)
-
-```
-a5b6 10 06 05 06 00 00 00 00 15
-```
-
-This "get all data" request triggers the device to send a sequence of responses:
-1. SETTINGS_ACK (type 0x23)
-2. DEVICE_STATE (type 0x01) - device config + Remote sensor
-3. SCHEDULE (type 0x02)
-4. PROBE_SENSORS (type 0x03) - current probe readings
-
-> **Discovered (2026-02-05):** Btsnoop analysis shows the VMI app uses this
-> request heavily for polling. It's more efficient than separate DEVICE_STATE and
-> PROBE_SENSORS requests since it gets all data in one request sequence.
-
-### 4.2 Device Control
-
-#### BOOST Command (type 0x10, param 0x19)
+### 5.2 Boost (param 0x19)
 
 | Command | Packet | Description |
 |---------|--------|-------------|
 | BOOST ON | `a5b610060519000000010b` | Enable 30-min BOOST |
 | BOOST OFF | `a5b610060519000000000a` | Disable BOOST |
 
-#### Preheat Toggle (type 0x10, param 0x2F)
+### 5.3 Preheat (param 0x2F)
 
 Toggles winter preheat on or off. This is a separate command from the Settings packet.
 
@@ -164,7 +270,135 @@ Toggles winter preheat on or off. This is a separate command from the Settings p
 
 The preheat state is reflected in DEVICE_STATE byte 53 (`0x01`=ON, `0x00`=OFF).
 
-#### Settings Command (type 0x1a)
+### 5.4 Holiday (param 0x1a)
+
+| Command | Packet | Description |
+|---------|--------|-------------|
+| Holiday 3 days | `a5b61006051a000000030a` | Set 3-day holiday |
+| Holiday 7 days | `a5b61006051a000000070e` | Set 7-day holiday |
+| Holiday OFF | `a5b61006051a0000000009` | Disable holiday |
+
+Byte 9 carries the number of holiday days (0=OFF, 1-255=active). The device
+responds with a DEVICE_STATE packet (~130ms) reflecting the new value in
+byte 43 (`holiday_days`).
+
+**Reading holiday status:** Use DEVICE_STATE byte 43, not the 0x50 response.
+The 0x50 response (from `REQUEST` param `0x2c`) is constant and does not
+reflect holiday state.
+
+**Response type:** The device responds with DEVICE_STATE (0x01), not
+SETTINGS_ACK (0x23). This differs from SETTINGS commands.
+
+> Verified via controlled capture sessions on 2026-02-05 and 2026-02-06.
+> Byte 43 changes instantly to match the value sent and returns to 0 when cleared.
+> Values 0, 3, 5, 7 all confirmed across multiple captures and e2e tests.
+
+## 6. Schedule System
+
+### 6.1 Reading the Schedule (param 0x27)
+
+Requests the current schedule configuration. The device responds with a
+Schedule Config Response (type 0x46).
+
+```
+a5b6 10 06 05 27 00 00 00 00 30
+```
+
+> **Verified (2026-02-06):** Confirmed via controlled capture sessions.
+> REQUEST param 0x27 reliably triggers a 0x46 response.
+
+#### Schedule Config Response (type 0x46)
+
+The device's response containing current schedule configuration. Same slot
+format as the write command (0x40), padded to 182 bytes with zeros. Triggered by REQUEST param 0x27.
+
+```
+a5b6 46 06 31 00 <slot_data...> <checksum> <zero padding to 182 bytes>
+```
+
+> **Verified (2026-02-06):** Parse validated against real device responses.
+
+#### Schedule Query (type 0x47)
+
+Triggered by REQUEST param 0x26. Structure not fully understood.
+
+```
+a5b6 47 06 18 00 08 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 51
+```
+
+### 6.2 Writing the Schedule (type 0x40)
+
+Writes the full 24-hour schedule configuration to the device. The device
+responds with SETTINGS_ACK (type 0x23) within ~200ms.
+
+The app sends the full 24-hour schedule on every single-slot change.
+
+```
+a5b6 40 06 31 00 <24 x 2-byte slots> <checksum>
+```
+
+| Offset | Size | Description |
+|--------|------|-------------|
+| 0-1 | 2 | Magic `a5b6` |
+| 2 | 1 | Type `0x40` |
+| 3-5 | 3 | Header `06 31 00` |
+| 6-53 | 48 | 24 time slots (2 bytes each) |
+| 54 | 1 | XOR checksum |
+
+Each slot is 2 bytes:
+
+| Byte | Description |
+|------|-------------|
+| 1 | Preheat temperature (°C), raw value (e.g., 0x10 = 16°C, 0x12 = 18°C) |
+| 2 | Mode byte |
+
+**Mode byte values:**
+
+| Mode | Byte | Decimal | Airflow |
+|------|------|---------|---------|
+| Mode 1 | 0x28 | 40 | LOW |
+| Mode 2 | 0x32 | 50 | MEDIUM |
+| Mode 3 | 0x3C | 60 | HIGH |
+
+> **Note:** The decimal values follow a regular 40/50/60 pattern, unlike the
+> settings airflow bytes which use unrelated two-byte pairs.
+
+**Example** (hour 0 set to HIGH at 18°C, hours 1-8 LOW, 9-17 MEDIUM, 18-23 LOW):
+```
+a5b6 40 06 31 00 123c 1028 1028 1028 1028 1028 1028 1028
+                  1028 1032 1032 1032 1032 1032 1032 1032
+                  1032 1032 1028 1028 1028 1028 1028 7b
+```
+
+> **Verified (2026-02-06):** Confirmed via controlled capture sessions (Runs 4-6).
+> All three mode bytes captured and verified. Device responds with SETTINGS_ACK.
+
+### 6.3 Enabling/Disabling Time Slots (param 0x1d)
+
+Enables or disables the "Activating time slots" feature (found under
+Configuration → "Activating time slots" in the VMI+ app). Byte 9 carries
+the value: 0=OFF, 1=ON. The device responds with an UNKNOWN_05 packet.
+
+When disabled, the "Time slot configuration" button disappears from the
+Configuration screen. The device stops enforcing the hourly schedule,
+allowing manual mode changes via 0x18 to persist indefinitely.
+
+| Command | Packet | Description |
+|---------|--------|-------------|
+| Schedule ON | `a5b61006051d000000010f` | Enable time slots |
+| Schedule OFF | `a5b61006051d000000000e` | Disable time slots |
+
+> **Verified (2026-02-06):** Observed in controlled captures (Runs 2-3).
+> **Verified (2026-02-07):** Sent `build_schedule_toggle(False)` via BLE,
+> confirmed VMI+ app Configuration screen shows "Activating time slots: OFF"
+> and "Time slot configuration" button disappears. Packets match phone
+> captures byte-for-byte.
+
+## 7. Advanced Topics
+
+### 7.1 Settings & Clock Sync (type 0x1a)
+
+The SETTINGS command is used by the phone app primarily for clock synchronization.
 
 Structure: `a5b6 1a 06 06 1a 02 <byte7> <byte8> <byte9> <byte10> <checksum>`
 
@@ -222,30 +456,10 @@ encoded differently).
 > reproduced in recent controlled captures. It is unclear whether bytes 8-10
 > carry different data in those cases.
 
-#### Holiday Command (type 0x10, param 0x1a)
+**SETTINGS bytes 9-10 are a clock sync, not airflow** — they carry the
+current minute and second.
 
-| Command | Packet | Description |
-|---------|--------|-------------|
-| Holiday 3 days | `a5b61006051a000000030a` | Set 3-day holiday |
-| Holiday 7 days | `a5b61006051a000000070e` | Set 7-day holiday |
-| Holiday OFF | `a5b61006051a0000000009` | Disable holiday |
-
-Byte 9 carries the number of holiday days (0=OFF, 1-255=active). The device
-responds with a DEVICE_STATE packet (~130ms) reflecting the new value in
-byte 43 (`holiday_days`).
-
-**Reading holiday status:** Use DEVICE_STATE byte 43, not the 0x50 response.
-The 0x50 response (from `REQUEST` param `0x2c`) is constant and does not
-reflect holiday state.
-
-**Response type:** The device responds with DEVICE_STATE (0x01), not
-SETTINGS_ACK (0x23). This differs from SETTINGS commands.
-
-> Verified via controlled capture sessions on 2026-02-05 and 2026-02-06.
-> Byte 43 changes instantly to match the value sent and returns to 0 when cleared.
-> Values 0, 3, 5, 7 all confirmed across multiple captures and e2e tests.
-
-### 4.3 Special Modes
+### 7.2 Special Modes
 
 > **Experimental:** Night Ventilation and Fixed Air Flow have significant gaps
 > in protocol understanding. See [Open Questions](#open-questions) for details.
@@ -270,125 +484,37 @@ SETTINGS_ACK (0x23). This differs from SETTINGS commands.
 - Whether this uses `REQUEST` (`0x10`) or `SETTINGS` (`0x1a`) path
 - OFF behavior and selected airflow behavior
 
-### 4.4 Schedule Commands
+### 7.3 Airflow Calculations
 
-#### Schedule Config Request (type 0x10, param 0x27)
-
-Requests the current schedule configuration. The device responds with a
-Schedule Config Response (type 0x46).
+Actual airflow (m³/h) depends on the configured volume (bytes 22-23 in status response):
 
 ```
-a5b6 10 06 05 27 00 00 00 00 30
+LOW    = volume × 0.36 ACH
+MEDIUM = volume × 0.45 ACH
+HIGH   = volume × 0.55 ACH
 ```
 
-> **Verified (2026-02-06):** Confirmed via controlled capture sessions.
-> REQUEST param 0x27 reliably triggers a 0x46 response.
+ACH = Air Changes per Hour. Multiply the factor by the configured volume
+(bytes 22-23, in m³) to get actual airflow in m³/h.
 
-#### Schedule Toggle (type 0x10, param 0x1d)
+**Example (volume = 363 m³):**
+- LOW: 363 × 0.36 = 131 m³/h
+- MEDIUM: 363 × 0.45 = 163 m³/h
+- HIGH: 363 × 0.55 = 200 m³/h
 
-Enables or disables the "Activating time slots" feature (found under
-Configuration → "Activating time slots" in the VMI+ app). Byte 9 carries
-the value: 0=OFF, 1=ON. The device responds with an UNKNOWN_05 packet.
+The volume is configured during professional installation based on the ventilated space size.
 
-When disabled, the "Time slot configuration" button disappears from the
-Configuration screen. The device stops enforcing the hourly schedule,
-allowing manual mode changes via 0x18 to persist indefinitely.
+**Model specifications:**
 
-| Command | Packet | Description |
-|---------|--------|-------------|
-| Schedule ON | `a5b61006051d000000010f` | Enable time slots |
-| Schedule OFF | `a5b61006051d000000000e` | Disable time slots |
+| Model | Hardware Max | Target Use |
+|-------|-------------|------------|
+| Urban Vision'R | 201 m³/h | Apartments, studios |
+| Purevent Vision'R | 350 m³/h | Houses |
+| Pro 1000 | 1000 m³/h | Commercial |
 
-> **Verified (2026-02-06):** Observed in controlled captures (Runs 2-3).
-> **Verified (2026-02-07):** Sent `build_schedule_toggle(False)` via BLE,
-> confirmed VMI+ app Configuration screen shows "Activating time slots: OFF"
-> and "Time slot configuration" button disappears. Packets match phone
-> captures byte-for-byte.
+## 8. Reference Tables
 
-#### Schedule Config Write (type 0x40)
-
-Writes the full 24-hour schedule configuration to the device. The device
-responds with SETTINGS_ACK (type 0x23) within ~200ms.
-
-The app sends the full 24-hour schedule on every single-slot change.
-
-```
-a5b6 40 06 31 00 <24 x 2-byte slots> <checksum>
-```
-
-| Offset | Size | Description |
-|--------|------|-------------|
-| 0-1 | 2 | Magic `a5b6` |
-| 2 | 1 | Type `0x40` |
-| 3-5 | 3 | Header `06 31 00` |
-| 6-53 | 48 | 24 time slots (2 bytes each) |
-| 54 | 1 | XOR checksum |
-
-Each slot is 2 bytes:
-
-| Byte | Description |
-|------|-------------|
-| 1 | Preheat temperature (°C), raw value (e.g., 0x10 = 16°C, 0x12 = 18°C) |
-| 2 | Mode byte |
-
-**Mode byte values:**
-
-| Mode | Byte | Decimal | Airflow |
-|------|------|---------|---------|
-| Mode 1 | 0x28 | 40 | LOW |
-| Mode 2 | 0x32 | 50 | MEDIUM |
-| Mode 3 | 0x3C | 60 | HIGH |
-
-> **Note:** The decimal values follow a regular 40/50/60 pattern, unlike the
-> settings airflow bytes which use unrelated two-byte pairs.
-
-**Example** (hour 0 set to HIGH at 18°C, hours 1-8 LOW, 9-17 MEDIUM, 18-23 LOW):
-```
-a5b6 40 06 31 00 123c 1028 1028 1028 1028 1028 1028 1028
-                  1028 1032 1032 1032 1032 1032 1032 1032
-                  1032 1032 1028 1028 1028 1028 1028 7b
-```
-
-> **Verified (2026-02-06):** Confirmed via controlled capture sessions (Runs 4-6).
-> All three mode bytes captured and verified. Device responds with SETTINGS_ACK.
-
-#### Schedule Config Response (type 0x46)
-
-The device's response containing current schedule configuration. Same slot
-format as 0x40, padded to 182 bytes with zeros. Triggered by REQUEST param 0x27.
-
-```
-a5b6 46 06 31 00 <slot_data...> <checksum> <zero padding to 182 bytes>
-```
-
-> **Verified (2026-02-06):** Parse validated against real device responses.
-
-#### Schedule Query (type 0x47)
-
-Triggered by REQUEST param 0x26. Structure not fully understood.
-
-```
-a5b6 47 06 18 00 08 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 51
-```
-
-## 5. Response Reference
-
-Responses arrive as notifications on characteristic handle 0x000e. Subscribe by writing `0x0100` to CCCD handle 0x000f.
-
-### Packet Types
-
-| Type | Length | Description |
-|------|--------|-------------|
-| `0x01` | 182 bytes | Device State (config + Remote sensor) |
-| `0x02` | 182 bytes | Schedule (time slot configuration) |
-| `0x03` | 182 bytes | Probe Sensors (current probe readings) |
-| `0x23` | 182 bytes | Settings acknowledgment |
-| `0x40` | 55 bytes | Schedule Config Write |
-| `0x46` | 182 bytes | Schedule Config Response |
-| `0x47` | 26 bytes | Schedule Query |
-| `0x50` | varies | Holiday status (constant, not useful — use byte 43) |
-
-### 5.1 Device State Packet (type 0x01)
+### 8.1 Device State (type 0x01) Full Byte Map
 
 | Offset | Size | Description | Example |
 |--------|------|-------------|---------|
@@ -435,9 +561,6 @@ Each mode value produces a distinct indicator value:
 | 1 (MEDIUM) | 0xC2 (194) | × 0.45 | Mid |
 | 2 (HIGH) | 0x26 (38) | × 0.55 | Highest |
 
-ACH = Air Changes per Hour. Multiply the factor by the configured volume
-(bytes 22-23, in m³) to get actual airflow in m³/h.
-
 #### Diagnostic Status Bitfield (byte 54)
 
 | Bit | Value | Component |
@@ -451,11 +574,20 @@ Value `0x0F` (all bits set) indicates all components healthy.
 
 > **Note:** Bit meanings are inferred from the device's diagnostic UI component list, but only value 0x0F (all healthy) has been observed.
 
-### 5.2 Schedule Response (type 0x02)
+### 8.2 Probe Sensors (type 0x03) Full Byte Map
 
-Contains schedule state and **Remote sensor readings** (temperature and humidity
-from the wireless RF remote control unit). Returned as part of the FULL_DATA_Q
-(param 0x06) response sequence.
+| Offset | Size | Description |
+|--------|------|-------------|
+| 4 | 1 | Unknown (observed: 25) |
+| 6 | 1 | Probe 1 temperature (°C) |
+| 8 | 1 | Probe 1 humidity (direct %) |
+| 11 | 1 | Probe 2 temperature (°C) |
+| 13 | 1 | Filter percentage (100 = new) |
+| 15, 20, 25 | 1 each | Unknown (observed: 8, repeating) |
+| 30 | 1 | Unknown (observed: 44) |
+| 31-181 | 151 | All zeros |
+
+### 8.3 Schedule (type 0x02) Full Byte Map
 
 | Offset | Size | Description |
 |--------|------|-------------|
@@ -471,72 +603,20 @@ from the wireless RF remote control unit). Returned as part of the FULL_DATA_Q
 | 15 | 1 | Days bitmask? `0xff` = all days |
 | 16+ | — | 11-byte repeating blocks with `0xff` markers |
 
-> **Verified (2026-02-08):** Remote temperature and humidity confirmed by moving
-> the wireless remote between rooms with different temperatures:
->
-> | Location | App Remote temp | byte[11] | App Remote hum | byte[13] |
-> |----------|----------------|----------|----------------|----------|
-> | Bedroom (19°C) | 21°C | 21 | 51% | 51 |
-> | Garage (12°C) | 15°C | 15 | 59% | 59 |
+### 8.4 All Packet Types
 
-The app's "Time slot configuration" UI shows:
-- 24 hourly slots (0h-23h)
-- Each slot: preheat temp (°C) and mode (1/2/3 = airflow level)
-- Per-day or default configuration
-- "Activating time slots" toggle
+| Type | Length | Description |
+|------|--------|-------------|
+| `0x01` | 182 bytes | Device State (config + Remote sensor) |
+| `0x02` | 182 bytes | Schedule (time slot configuration) |
+| `0x03` | 182 bytes | Probe Sensors (current probe readings) |
+| `0x23` | 182 bytes | Settings acknowledgment |
+| `0x40` | 55 bytes | Schedule Config Write |
+| `0x46` | 182 bytes | Schedule Config Response |
+| `0x47` | 26 bytes | Schedule Query |
+| `0x50` | varies | Holiday status (constant, not useful — use byte 43) |
 
-### 5.3 Probe Sensors Packet (type 0x03)
-
-Contains current/live probe temperature and humidity readings.
-
-| Offset | Size | Description |
-|--------|------|-------------|
-| 4 | 1 | Unknown (observed: 25) |
-| 6 | 1 | Probe 1 temperature (°C) |
-| 8 | 1 | Probe 1 humidity (direct %) |
-| 11 | 1 | Probe 2 temperature (°C) |
-| 13 | 1 | Filter percentage (100 = new) |
-| 15, 20, 25 | 1 each | Unknown (observed: 8, repeating) |
-| 30 | 1 | Unknown (observed: 44) |
-| 31-181 | 151 | All zeros |
-
-> **Note:** This packet does NOT contain Remote sensor data. Remote temperature
-> and humidity are in the **SCHEDULE packet** (type 0x02, bytes 11 and 13),
-> returned by FULL_DATA_Q (param 0x06). Remote humidity is also in
-> DEVICE_STATE byte 4.
-
-## 6. Sensor Data Architecture
-
-Sensor data is spread across three packet types. Use FULL_DATA_Q (param 0x06)
-to get all three packets in one request:
-
-| Reading | Packet | Offset | Notes |
-|---------|--------|--------|-------|
-| Remote temperature | SCHEDULE (0x02) | byte 11 | Direct °C |
-| Remote humidity | SCHEDULE (0x02) | byte 13 | Direct % |
-| Remote humidity | DEVICE_STATE (0x01) | byte 4 | Also available here |
-| Probe 1 temperature | PROBE_SENSORS (0x03) | byte 6 | Direct °C |
-| Probe 1 humidity | PROBE_SENSORS (0x03) | byte 8 | Direct % |
-| Probe 2 temperature | PROBE_SENSORS (0x03) | byte 11 | Direct °C |
-
-### Getting All Readings
-
-Send a single **FULL_DATA_Q** request (param 0x06), which triggers three
-responses: DEVICE_STATE, SCHEDULE, and PROBE_SENSORS.
-
-This is the polling pattern used by the VMI+ phone app:
-- **Home screen:** DEVICE_STATE_Q + FULL_DATA_Q every ~10 seconds
-- **Measurements screen:** PROBE_SENSORS_Q + FULL_DATA_Q every ~10 seconds
-
-> **Note:** DEVICE_STATE bytes 35 and 42 contain Probe 1/2 temperatures
-> but are unreliable — use PROBE_SENSORS for probe readings.
-
-## 7. Data Encoding Reference
-
-### 7.1 Fan Speed Control (REQUEST param 0x18)
-
-REQUEST param 0x18 controls the fan speed. The phone sends this when the
-user taps LOW/MEDIUM/HIGH.
+### 8.5 Fan Speed Encoding
 
 | 0x18 Value | Fan Speed | Indicator (byte 47) | ACH Factor |
 |-----------|-----------|---------------------|------------|
@@ -544,45 +624,7 @@ user taps LOW/MEDIUM/HIGH.
 | 1 | MEDIUM | 194 (0xC2) | × 0.45 |
 | 2 | HIGH | 38 (0x26) | × 0.55 |
 
-**0x18 changes BLE state bytes and the physical fan speed** (verified
-via vibration sensor on 2026-02-08, delta ~+0.007 m/s² for LOW→HIGH across
-two runs). It updates DEVICE_STATE bytes (34/47/48/60), the VMI's RF
-remote control display, and the fan motor speed.
-
-**SETTINGS bytes 9-10 are a clock sync, not airflow** — they carry the
-current minute and second. See the [Settings Command](#settings-command-type-0x1a)
-section for details.
-
-### 7.2 Volume-Based Calculations
-
-Actual airflow (m³/h) depends on the configured volume (bytes 22-23 in status response):
-
-```
-LOW    = volume × 0.36 ACH
-MEDIUM = volume × 0.45 ACH
-HIGH   = volume × 0.55 ACH
-```
-
-**Example (volume = 363 m³):**
-- LOW: 363 × 0.36 = 131 m³/h
-- MEDIUM: 363 × 0.45 = 163 m³/h
-- HIGH: 363 × 0.55 = 200 m³/h
-
-The volume is configured during professional installation based on the ventilated space size.
-
-**Model specifications:**
-
-| Model | Hardware Max | Target Use |
-|-------|-------------|------------|
-| Urban Vision'R | 201 m³/h | Apartments, studios |
-| Purevent Vision'R | 350 m³/h | Houses |
-| Pro 1000 | 1000 m³/h | Commercial |
-
-## 8. Library
-
-See [implementation-status.md](implementation-status.md) for feature implementation tracking.
-
-## Appendix A: Unknown Fields
+## 9. Open Questions & Unknown Fields
 
 ### Status Packet Unknowns
 
@@ -649,8 +691,9 @@ See [implementation-status.md](implementation-status.md) for feature implementat
 - Holiday Status (0x50) response structure — constant payload, not useful for state
 - Settings Ack (0x23) — structure not documented
 
-## Appendix B: References
+## 10. References
 
+- [Implementation Status](implementation-status.md) — Feature implementation tracking for the library
 - [Infineon AN91162 - Creating a BLE Custom Profile](https://www.infineon.com/dgdl/Infineon-AN91162_Creating_a_BLE_Custom_Profile-ApplicationNotes-v05_00-EN.pdf)
 - [Implementation Speculation](implementation-speculation.md) — Analysis of likely firmware implementation based on Cypress PSoC-4-BLE demo code patterns
 - [Infineon PSoC-4-BLE GitHub](https://github.com/Infineon/PSoC-4-BLE) — Demo projects that VisionAir firmware appears to be based on
