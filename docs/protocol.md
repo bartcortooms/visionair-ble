@@ -416,10 +416,9 @@ Responses arrive as notifications on characteristic handle 0x000e. Subscribe by 
 | 54 | 1 | Diagnostic status bitfield | `0x0F`=all OK |
 | 56 | 1 | Preheat temperature (°C) | 16 |
 
-#### Sensor/Mode Selector (byte 34)
+#### Mode Selector (byte 34)
 
-Tracks the current sensor and airflow mode (these are coupled in the firmware).
-Matches the value sent via REQUEST param 0x18.
+Tracks the current fan speed mode. Matches the value sent via REQUEST param 0x18.
 
 | Value | Sensor | Airflow Mode |
 |-------|--------|-------------|
@@ -542,10 +541,10 @@ temperature directly from the SCHEDULE response.
 
 ## 7. Data Encoding Reference
 
-### 7.1 Sensor Selection and Airflow Modes
+### 7.1 Fan Speed Control (REQUEST param 0x18)
 
-Sensor selection and airflow mode are coupled in a single command
-(REQUEST param 0x18). Each value selects a sensor AND sets the fan speed:
+REQUEST param 0x18 controls the fan speed. The phone sends this when the
+user taps LOW/MEDIUM/HIGH. No SETTINGS packet is sent alongside it.
 
 | 0x18 Value | Fan Speed | Indicator (byte 47) | ACH Factor |
 |-----------|-----------|---------------------|------------|
@@ -553,21 +552,18 @@ Sensor selection and airflow mode are coupled in a single command
 | 1 | MEDIUM | 194 (0xC2) | × 0.45 |
 | 2 | HIGH | 38 (0x26) | × 0.55 |
 
-The phone sends this command when the user taps a fan button. No SETTINGS
-packet is sent alongside it. The phone does NOT use 0x18 for sensor polling
-— it reads all sensor data via FULL_DATA_Q (see Section 6).
-
-**0x18 changes both BLE state bytes and the physical fan speed** (verified
+**0x18 changes BLE state bytes and the physical fan speed** (verified
 via vibration sensor on 2026-02-08, delta ~+0.007 m/s² for LOW→HIGH across
-two runs). It updates DEVICE_STATE bytes (32/34/47/48/60), the VMI's RF
+two runs). It updates DEVICE_STATE bytes (34/47/48/60), the VMI's RF
 remote control display, and the fan motor speed.
 
-**SETTINGS bytes 9-10 are a clock sync, not airflow:**
+Sensor data does not depend on the 0x18 value — all sensor readings are
+available via FULL_DATA_Q regardless of the current fan speed setting
+(see Section 6).
 
-The SETTINGS packet bytes 9-10 were originally assumed to be fixed per-mode
-airflow values. Analysis of capture `fan_speed_capture_20260207_171617`
-reveals they carry the current minute and second — see the
-[Settings Command](#settings-command-type-0x1a) section for details.
+**SETTINGS bytes 9-10 are a clock sync, not airflow** — they carry the
+current minute and second. See the [Settings Command](#settings-command-type-0x1a)
+section for details.
 
 ### 7.2 Volume-Based Calculations
 

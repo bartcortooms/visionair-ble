@@ -218,7 +218,7 @@ class TestSensorRetrieval:
 
 @pytest.mark.e2e
 class TestFreshStatus:
-    """Test fresh status retrieval with sensor cycling."""
+    """Test fresh status retrieval via FULL_DATA_Q."""
 
     @pytest.mark.asyncio
     async def test_get_fresh_status(
@@ -261,9 +261,8 @@ class TestFreshStatus:
 class TestFreshStatusReliability:
     """Test that get_fresh_status reliably returns all sensor readings.
 
-    This catches intermittent failures where stale BLE notifications
-    cause sensor_select responses to be misattributed, resulting in
-    None values for temp_remote or humidity_probe1.
+    Runs multiple iterations to catch intermittent BLE notification failures
+    that could result in None values for temp_remote or humidity_probe1.
     """
 
     ITERATIONS = 5
@@ -565,7 +564,7 @@ async def run_e2e_tests(
                 print(f"FAILED: {e}")
                 tests_failed += 1
 
-            print("\n--- Fresh status (sensor cycling) ---")
+            print("\n--- Fresh status (FULL_DATA_Q) ---")
             try:
                 fresh = await visionair.get_fresh_status()
                 print(f"  Remote: {fresh.temp_remote}°C, {fresh.humidity_remote}%")

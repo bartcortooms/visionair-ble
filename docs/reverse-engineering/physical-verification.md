@@ -146,4 +146,4 @@ Both deltas exceed the 0.005 m/s² threshold for detecting a real speed change. 
 
 The VMI's physical RF remote display also updates after 0x18 commands, with a variable delay (a few seconds to ~20 seconds, likely due to polling interval).
 
-**Previous listen test discrepancy:** An earlier listen test (2026-02-07) concluded that 0x18 did not change fan speed. The vibration sensor detected a real but modest change (+37% vibration) that was below the threshold of human hearing at the distances involved. This demonstrates the value of quantitative physical measurements over subjective observation.
+**Note:** The LOW→HIGH speed change (+37% vibration) is below the threshold of human hearing at typical distances. Quantitative vibration measurement is required to detect it — subjective listening is unreliable for small speed differences.
