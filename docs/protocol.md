@@ -198,34 +198,29 @@ a5b6 10 06 05 07 00 00 00 00 14
 > returned by FULL_DATA_Q (param 0x06). Remote humidity is also in
 > DEVICE_STATE byte 4.
 
-### 4.4 Schedule Response (type 0x02)
+### 4.4 Remote Sensor Data (in Schedule packet, type 0x02)
 
-Contains schedule state and **Remote sensor readings** (temperature and humidity
-from the wireless RF remote control unit). Returned as part of the FULL_DATA_Q
+The Remote sensor readings (from the wireless RF remote control unit) are
+carried in the SCHEDULE packet (type 0x02), returned as part of the FULL_DATA_Q
 (param 0x06) response sequence.
-
-**Key fields** (full byte map in [Reference Tables](#83-schedule-type-0x02-full-byte-map)):
 
 | Offset | Description |
 |--------|-------------|
-| 4-7 | Device ID (LE) |
-| **11** | **Remote temperature (direct °C)** |
-| **13** | **Remote humidity (direct %)** |
-| 15 | Days bitmask? `0xff` = all days |
+| 11 | Remote temperature (direct °C) |
+| 13 | Remote humidity (direct %) |
 
-> **Verified (2026-02-08):** Remote temperature and humidity confirmed by moving
-> the wireless remote between rooms with different temperatures:
+> **Verified (2026-02-08):** Confirmed by moving the wireless remote between
+> rooms with different temperatures:
 >
 > | Location | App Remote temp | byte[11] | App Remote hum | byte[13] |
 > |----------|----------------|----------|----------------|----------|
 > | Bedroom (19°C) | 21°C | 21 | 51% | 51 |
 > | Garage (12°C) | 15°C | 15 | 59% | 59 |
 
-The app's "Time slot configuration" UI shows:
-- 24 hourly slots (0h-23h)
-- Each slot: preheat temp (°C) and mode (1/2/3 = airflow level)
-- Per-day or default configuration
-- "Activating time slots" toggle
+The rest of the SCHEDULE packet contains schedule state data — most of it is
+not fully decoded. See the [full byte map](#83-schedule-type-0x02-full-byte-map)
+and [Open Questions](#open-questions) for details. Schedule reading/writing uses
+separate packets (0x46/0x40), documented in [section 6](#6-schedule-system).
 
 ### 4.5 Sensor Summary
 
