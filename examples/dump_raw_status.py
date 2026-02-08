@@ -45,13 +45,13 @@ def parse_key_bytes(data: bytes) -> dict:
         "volume_b22_23": int.from_bytes(data[22:24], "little"),
         "operating_days_b26_27": int.from_bytes(data[26:28], "little"),
         "filter_days_b28_29": int.from_bytes(data[28:30], "little"),
-        "temp_active_b32": data[32],
+        "unknown_b32": data[32],
         "sensor_selector_b34": data[34],
         "temp_probe1_b35": data[35],
         "temp_probe2_b42": data[42],
         "boost_active_b44": data[44],
         "airflow_indicator_b47": data[47],
-        "preheat_enabled_b49": data[49],
+        "preheat_enabled_b53": data[53],
         "summer_limit_b50": data[50],
         "preheat_temp_b56": data[56],
     }
@@ -135,7 +135,7 @@ async def main(address: str):
         selector = parsed.get("sensor_selector_b34", -1)
         sensor_names = {0: "Probe 2 (Air inlet)", 1: "Probe 1 (Resistor)", 2: "Remote Control"}
         print(f"  Active sensor: {sensor_names.get(selector, f'Unknown ({selector})')}")
-        print(f"  Active sensor temp (B32): {parsed.get('temp_active_b32')}°C")
+        print(f"  Unknown B32: {parsed.get('unknown_b32')} (changes with sensor select, purpose unknown)")
 
         # Now request history packet
         print("\n--- Sending History Request ---")
@@ -173,7 +173,7 @@ async def main(address: str):
         print("\n--- Temperature Comparison: STATUS vs HISTORY ---")
         print(f"  Probe 1:  STATUS B35={parsed.get('temp_probe1_b35')}°C  vs  HISTORY B6={history_parsed.get('temp_probe1_b6')}°C")
         print(f"  Probe 2:  STATUS B42={parsed.get('temp_probe2_b42')}°C  vs  HISTORY B11={history_parsed.get('temp_probe2_b11')}°C")
-        print(f"  Remote:   Use B32 (active_temp) when sensor_selector=2")
+        print(f"  Remote:   Use SCHEDULE packet byte 11 (from FULL_DATA_Q request)")
         print(f"  Unknown:  STATUS B8={parsed.get('unknown_b8')} (always 18, not a temperature)")
         print(f"  Humidity: STATUS B4={parsed.get('humidity_b4')}%  vs  HISTORY B8={history_parsed.get('humidity_probe1_b8')}%")
 

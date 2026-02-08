@@ -29,6 +29,7 @@ from visionair_ble.protocol import (
     calc_checksum,
     is_visionair_device,
     parse_schedule_config,
+    parse_schedule_data,
     parse_status,
     verify_checksum,
 )
@@ -177,7 +178,7 @@ class TestStatusParsing:
         packet[22:24] = (363).to_bytes(2, "little")  # configured volume
         packet[26:28] = (634).to_bytes(2, "little")  # operating days
         packet[28:30] = (331).to_bytes(2, "little")  # filter days
-        packet[32] = 19  # active temp (depends on mode index)
+        packet[32] = 19  # unknown byte (changes with sensor select)
         packet[34] = 2  # mode index (2 = HIGH)
         packet[35] = 16  # probe 1 temp
         packet[38] = 26  # summer limit temp
@@ -197,8 +198,8 @@ class TestStatusParsing:
         assert status.airflow_medium == 163  # 363 * 0.45 = 163.35 -> 163
         assert status.airflow_high == 200  # 363 * 0.55 = 199.65 -> 200
         assert status.airflow == 200  # HIGH = airflow_high
-        assert status.temp_remote == 19
-        # Probe temps are None when sensor_selector != their index
+        # Temperatures are not in DEVICE_STATE — use SCHEDULE (Remote) and PROBE_SENSORS (probes)
+        assert status.temp_remote is None
         assert status.temp_probe1 is None
         assert status.temp_probe2 is None
         assert status.humidity_remote == 52
@@ -739,3 +740,62 @@ class TestScheduleCapturedData:
         response[3:6] = write_packet[3:6]  # Header
         response[6:54] = write_packet[6:54]  # Slot data
         return bytes(response)
+
+
+class TestParseScheduleData:
+    """Tests for parsing Remote sensor data from SCHEDULE packet (type 0x02)."""
+
+    def _make_schedule_packet(self, temp: int = 21, humidity: int = 51) -> bytes:
+        """Create a minimal SCHEDULE packet with Remote sensor data."""
+        packet = bytearray(182)
+        packet[0:2] = b"\xa5\xb6"
+        packet[2] = PacketType.SCHEDULE
+        packet[11] = temp
+        packet[13] = humidity
+        return bytes(packet)
+
+    def test_parse_valid(self):
+        """Test parsing valid SCHEDULE packet with Remote temp and humidity."""
+        temp, humidity = parse_schedule_data(self._make_schedule_packet(21, 51))
+        assert temp == 21
+        assert humidity == 51
+
+    def test_parse_different_values(self):
+        """Test parsing with different Remote sensor values (garage experiment)."""
+        temp, humidity = parse_schedule_data(self._make_schedule_packet(15, 59))
+        assert temp == 15
+        assert humidity == 59
+
+    def test_parse_invalid_magic(self):
+        """Test parsing fails with wrong magic bytes."""
+        packet = bytearray(self._make_schedule_packet())
+        packet[0:2] = b"\x00\x00"
+        temp, humidity = parse_schedule_data(bytes(packet))
+        assert temp is None
+        assert humidity is None
+
+    def test_parse_wrong_type(self):
+        """Test parsing fails with wrong packet type."""
+        packet = bytearray(self._make_schedule_packet())
+        packet[2] = 0x01  # DEVICE_STATE, not SCHEDULE
+        temp, humidity = parse_schedule_data(bytes(packet))
+        assert temp is None
+        assert humidity is None
+
+    def test_parse_too_short(self):
+        """Test parsing fails with packet too short."""
+        temp, humidity = parse_schedule_data(b"\xa5\xb6\x02" + b"\x00" * 5)
+        assert temp is None
+        assert humidity is None
+
+    def test_parse_zero_temp_returns_none(self):
+        """Test that temp=0 is treated as no data."""
+        temp, humidity = parse_schedule_data(self._make_schedule_packet(0, 51))
+        assert temp is None
+        assert humidity == 51
+
+    def test_parse_zero_humidity_returns_none(self):
+        """Test that humidity=0 is treated as no data."""
+        temp, humidity = parse_schedule_data(self._make_schedule_packet(21, 0))
+        assert temp == 21
+        assert humidity is None

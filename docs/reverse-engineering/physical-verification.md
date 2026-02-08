@@ -72,7 +72,7 @@ The fan motor does not change speed instantaneously. The ramp-up and ramp-down t
 | LOW → HIGH | ~20 seconds, with a secondary settling phase over ~2 minutes |
 | LOW → MAX | ~20 seconds |
 
-HIGH mode shows a two-phase ramp: an initial jump to ~0.043, then a gradual climb to the settled value of ~0.048 over about 2 minutes.
+HIGH mode shows a two-phase ramp: an initial jump to ~0.043, then a gradual climb to the settled value of ~0.048 over about 2 minutes. In automated experiments, 30 seconds captures the initial jump (delta ~+0.007 from LOW), which is sufficient to confirm the speed change.
 
 ### Ramp-down (decreasing speed)
 
@@ -130,4 +130,20 @@ speed_changed = abs(after - baseline) > 0.005  # threshold for detecting change
 
 ### Distinguishing BLE-state-only changes from physical changes
 
-This is the primary use case. Some commands (e.g., REQUEST param 0x18) change BLE-visible mode bytes without affecting the physical fan speed. The vibration sensor provides ground truth: if the vibration level doesn't change after a command, the command did not change the motor speed, regardless of what the BLE state bytes show.
+The vibration sensor provides ground truth: if the vibration level doesn't change after a command, the command did not change the motor speed, regardless of what the BLE state bytes show.
+
+### Verified: REQUEST param 0x18 changes physical fan speed
+
+REQUEST param 0x18 (the mode select command sent by the VMI+ phone app) changes both the BLE state bytes AND the physical fan speed. This was verified with the vibration sensor across multiple runs:
+
+| Metric | Run 1 | Run 2 |
+|--------|-------|-------|
+| LOW baseline | 0.0327 m/s² | 0.0323 m/s² |
+| After HIGH cmd | 0.0399 m/s² | 0.0392 m/s² |
+| Delta | +0.0072 | +0.0069 |
+
+Both deltas exceed the 0.005 m/s² threshold for detecting a real speed change. The vibration increase is consistent with the expected LOW→HIGH transition.
+
+The VMI's physical RF remote display also updates after 0x18 commands, with a variable delay (a few seconds to ~20 seconds, likely due to polling interval).
+
+**Previous listen test discrepancy:** An earlier listen test (2026-02-07) concluded that 0x18 did not change fan speed. The vibration sensor detected a real but modest change (+37% vibration) that was below the threshold of human hearing at the distances involved. This demonstrates the value of quantitative physical measurements over subjective observation.

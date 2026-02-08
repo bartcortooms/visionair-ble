@@ -109,21 +109,18 @@ Returns current probe temperatures and humidity.
 
 #### Mode Select (type 0x10, param 0x18)
 
-Selects one of three device modes. Each mode determines which sensor's
-temperature appears at DEVICE_STATE byte 32. Whether this command also
-changes the physical fan speed is under investigation (see open questions).
+Selects one of three device modes, setting the physical fan speed.
 
-| Byte 9 | Sensor | Indicator | Byte 32 shows | Packet |
-|--------|--------|-----------|---------------|--------|
-| 0x00 | Probe 2 (Air inlet) | 0x68 (LOW) | Inlet temperature | `a5b610060518000000000b` |
-| 0x01 | Probe 1 (Resistor outlet) | 0xC2 (MEDIUM) | Outlet temperature | `a5b610060518000000010a` |
-| 0x02 | Remote Control | 0x26 (HIGH) | Room temperature | `a5b6100605180000000209` |
+| Byte 9 | Sensor | Indicator | Packet |
+|--------|--------|-----------|--------|
+| 0x00 | Probe 2 (Air inlet) | 0x68 (LOW) | `a5b610060518000000000b` |
+| 0x01 | Probe 1 (Resistor outlet) | 0xC2 (MEDIUM) | `a5b610060518000000010a` |
+| 0x02 | Remote Control | 0x26 (HIGH) | `a5b6100605180000000209` |
 
 The device responds with an updated DEVICE_STATE packet where:
 - Byte 34 matches the requested value
-- Byte 32 contains the corresponding sensor's temperature
 - Byte 47 (indicator) changes to the corresponding value
-- Byte 60 changes (possibly humidity from the selected sensor)
+- Byte 60 changes (purpose unknown)
 
 When the user taps LOW/MEDIUM/HIGH in the phone app, the phone sends a
 single 0x18 request with the corresponding value. No SETTINGS packet is
@@ -404,7 +401,7 @@ Responses arrive as notifications on characteristic handle 0x000e. Subscribe by 
 | 22-23 | 2 | Configured volume (m³) (LE u16) | 363 |
 | 26-27 | 2 | Operating days (LE u16) | 634 |
 | 28-29 | 2 | Filter life days (LE u16) | 330 |
-| 32 | 1 | Temperature for current sensor/mode (see byte 34) | 19 |
+| 32 | 1 | Unknown (changes with sensor select, purpose unknown) | 19 |
 | 34 | 1 | Sensor/mode selector (0=Probe2/LOW, 1=Probe1/MED, 2=Remote/HIGH) | 0/1/2 |
 | 35 | 1 | Probe 1 temperature (°C) — unreliable, use PROBE_SENSORS | 16 |
 | 38 | 1 | Summer limit temp threshold (°C) | 26 |
@@ -424,11 +421,11 @@ Responses arrive as notifications on characteristic handle 0x000e. Subscribe by 
 Tracks the current sensor and airflow mode (these are coupled in the firmware).
 Matches the value sent via REQUEST param 0x18.
 
-| Value | Sensor | Airflow Mode | Byte 32 shows |
-|-------|--------|-------------|---------------|
-| 0 | Probe 2 (Air inlet) | LOW | Inlet temperature |
-| 1 | Probe 1 (Resistor outlet) | MEDIUM | Outlet temperature |
-| 2 | Remote Control | HIGH | Room temperature |
+| Value | Sensor | Airflow Mode |
+|-------|--------|-------------|
+| 0 | Probe 2 (Air inlet) | LOW |
+| 1 | Probe 1 (Resistor outlet) | MEDIUM |
+| 2 | Remote Control | HIGH |
 
 #### Sensor/Mode Indicator (byte 47)
 
@@ -458,7 +455,9 @@ Value `0x0F` (all bits set) indicates all components healthy.
 
 ### 5.2 Schedule Response (type 0x02)
 
-Reports current time and schedule state.
+Contains schedule state and **Remote sensor readings** (temperature and humidity
+from the wireless RF remote control unit). Returned as part of the FULL_DATA_Q
+(param 0x06) response sequence.
 
 | Offset | Size | Description |
 |--------|------|-------------|
@@ -466,11 +465,21 @@ Reports current time and schedule state.
 | 2 | 1 | Type `0x02` |
 | 4-7 | 4 | Device ID (LE) |
 | 8-9 | 2 | Config flags? `0x04 0x01` |
-| 10 | 1 | Mode? `0x03` |
-| 11 | 1 | Current hour (0-23) |
-| 13 | 1 | Current minute (0-59) |
+| 10 | 1 | Unknown `0x03` |
+| **11** | **1** | **Remote temperature (direct °C)** |
+| 12 | 1 | Unknown `0x00` |
+| **13** | **1** | **Remote humidity (direct %)** |
+| 14 | 1 | Unknown `0x00` |
 | 15 | 1 | Days bitmask? `0xff` = all days |
 | 16+ | — | 11-byte repeating blocks with `0xff` markers |
+
+> **Verified (2026-02-08):** Remote temperature and humidity confirmed by moving
+> the wireless remote between rooms with different temperatures:
+>
+> | Location | App Remote temp | byte[11] | App Remote hum | byte[13] |
+> |----------|----------------|----------|----------------|----------|
+> | Bedroom (19°C) | 21°C | 21 | 51% | 51 |
+> | Garage (12°C) | 15°C | 15 | 59% | 59 |
 
 The app's "Time slot configuration" UI shows:
 - 24 hourly slots (0h-23h)
@@ -494,54 +503,42 @@ Contains current/live probe temperature and humidity readings.
 | 31-181 | 151 | All zeros |
 
 > **Note:** This packet does NOT contain Remote sensor data. Remote temperature
-> is only available in the Device State packet (byte 32) after sending a
-> Sensor Select request (param 0x18, value 2). Remote humidity is always in
-> Device State byte 4. Full hex dump confirmed no Remote temperature or
-> humidity values present in PROBE_SENSORS bytes 14-181.
+> and humidity are in the **SCHEDULE packet** (type 0x02, bytes 11 and 13),
+> returned by FULL_DATA_Q (param 0x06). Remote humidity is also in
+> DEVICE_STATE byte 4.
 
 ## 6. Sensor Data Architecture
 
-There is no single packet that contains all sensor temperatures. Data is split
-across two packet types by sensor connectivity:
+Sensor data is spread across three packet types. All readings are available
+without changing the fan speed — use FULL_DATA_Q (param 0x06) to get all
+three packets in one request:
 
-| Reading | Source | Packet | Notes |
+| Reading | Packet | Offset | Notes |
 |---------|--------|--------|-------|
-| Probe 1 temperature | Wired | PROBE_SENSORS byte 6 | Always live |
-| Probe 1 humidity | Wired | PROBE_SENSORS byte 8 | Always live |
-| Probe 2 temperature | Wired | PROBE_SENSORS byte 11 | Always live |
-| Remote humidity | RF | DEVICE_STATE byte 4 | Always present |
-| Remote temperature | RF | DEVICE_STATE byte 32 | **Only when selector (byte 34) = 2** |
-
-The wired probes (Probe 1 = outlet, Probe 2 = inlet) are always available
-in the PROBE_SENSORS packet. The Remote sensor communicates via RF and its
-temperature is only available in the DEVICE_STATE packet when the device's
-internal sensor selector is pointing at it.
+| Remote temperature | SCHEDULE (0x02) | byte 11 | Direct °C |
+| Remote humidity | SCHEDULE (0x02) | byte 13 | Direct % |
+| Remote humidity | DEVICE_STATE (0x01) | byte 4 | Also available here |
+| Probe 1 temperature | PROBE_SENSORS (0x03) | byte 6 | Direct °C |
+| Probe 1 humidity | PROBE_SENSORS (0x03) | byte 8 | Direct % |
+| Probe 2 temperature | PROBE_SENSORS (0x03) | byte 11 | Direct °C |
 
 ### Getting All Readings
 
-Since sensor selection and airflow mode are coupled (param 0x18), reading
-all sensor temperatures requires cycling through modes. The phone app does this:
+Send a single **FULL_DATA_Q** request (param 0x06), which triggers three
+responses: DEVICE_STATE, SCHEDULE, and PROBE_SENSORS. This provides all
+sensor readings without changing the fan speed.
 
-1. Send **Probe Sensors Request** (param 0x07) → Probe 1/2 temps + Probe 1 humidity
-2. Send **Sensor Select** (param 0x18, value=0) → byte 32 = Probe 2 temp
-3. Wait ~30s, send **Sensor Select** (param 0x18, value=1) → byte 32 = Probe 1 temp
-4. Wait ~30s, send **Sensor Select** (param 0x18, value=2) → byte 32 = Remote temp
-5. Stay on value=2 (or the user's selected mode) until the next cycle
+This is the polling pattern used by the VMI+ phone app:
+- **Home screen:** DEVICE_STATE_Q + FULL_DATA_Q every ~10 seconds
+- **Measurements screen:** PROBE_SENSORS_Q + FULL_DATA_Q every ~10 seconds
 
-The phone caches the temperature from each position and displays all three
-simultaneously. It cycles every few minutes.
+The app never sends SENSOR_SELECT (0x18) for polling — it reads Remote
+temperature directly from the SCHEDULE response.
 
-Remote humidity (byte 4) is always available in DEVICE_STATE regardless
-of the current selector value.
-
-> **Note:** Because sensor selection changes the fan speed, cycling briefly
-> runs the fan at LOW and MEDIUM before returning to the user's mode. The
-> phone apparently considers this acceptable. The full cycle takes ~60 seconds.
->
-> **Note:** The Device State packet also contains Probe 1/2 temperatures at
+> **Note:** The DEVICE_STATE packet contains Probe 1/2 temperatures at
 > bytes 35 and 42, but these are unreliable. Use PROBE_SENSORS for probe
-> readings. Since Probe 1/2 are available via PROBE_SENSORS without mode
-> cycling, only Remote temperature truly requires the 0x18 cycling.
+> readings. DEVICE_STATE byte 32 changes with sensor select (0x18) but its
+> purpose is unknown — it is NOT a reliable temperature source.
 
 ## 7. Data Encoding Reference
 
@@ -550,25 +547,20 @@ of the current selector value.
 Sensor selection and airflow mode are coupled in a single command
 (REQUEST param 0x18). Each value selects a sensor AND sets the fan speed:
 
-| 0x18 Value | Sensor | Fan Speed | Indicator (byte 47) | ACH Factor |
-|-----------|--------|-----------|---------------------|------------|
-| 0 | Probe 2 (inlet) | LOW | 104 (0x68) | × 0.36 |
-| 1 | Probe 1 (outlet) | MEDIUM | 194 (0xC2) | × 0.45 |
-| 2 | Remote Control | HIGH | 38 (0x26) | × 0.55 |
+| 0x18 Value | Fan Speed | Indicator (byte 47) | ACH Factor |
+|-----------|-----------|---------------------|------------|
+| 0 | LOW | 104 (0x68) | × 0.36 |
+| 1 | MEDIUM | 194 (0xC2) | × 0.45 |
+| 2 | HIGH | 38 (0x26) | × 0.55 |
 
-The phone uses this command for both mode changes (user taps a button) and
-sensor polling (automatic cycling through 0→1→2). No SETTINGS packet is
-sent alongside the 0x18 command when the user taps a fan button.
+The phone sends this command when the user taps a fan button. No SETTINGS
+packet is sent alongside it. The phone does NOT use 0x18 for sensor polling
+— it reads all sensor data via FULL_DATA_Q (see Section 6).
 
-**0x18 does NOT change the physical fan speed** (verified via physical listen
-test on 2026-02-07). It changes the mode selector in DEVICE_STATE bytes
-(32/34/47/48/60) and the VMI's remote control display, but the fan motor
-speed is unchanged. The VMI's physical remote (RF) can change the same bytes
-AND the physical fan speed — the remote uses a different control path.
-
-The mechanism by which the phone app's 0x18 commands result in physical fan
-speed changes is unknown. The phone's initialization sequence (SETTINGS time
-sync + REQUEST 0x29 burst) may establish a state that makes 0x18 effective.
+**0x18 changes both BLE state bytes and the physical fan speed** (verified
+via vibration sensor on 2026-02-08, delta ~+0.007 m/s² for LOW→HIGH across
+two runs). It updates DEVICE_STATE bytes (32/34/47/48/60), the VMI's RF
+remote control display, and the fan motor speed.
 
 **SETTINGS bytes 9-10 are a clock sync, not airflow:**
 
@@ -646,16 +638,16 @@ See [implementation-status.md](implementation-status.md) for feature implementat
 - Param 0x05: seen occasionally (268 occurrences across all captures).
 
 **Mode Select (param 0x18):**
-- 0x18 does NOT change the physical fan speed (verified via listen test with
-  schedule disabled). It changes DEVICE_STATE bytes 32/34/47/48/60 and the
-  VMI's remote control display.
-- The phone sends only 0x18 for fan button taps (no SETTINGS alongside). But
-  the phone's initialization sequence (SETTINGS time sync + 0x29 burst) may
-  be required for 0x18 to physically affect the fan motor.
-- The VMI's physical remote (RF) can change the same bytes AND the fan speed
+- 0x18 changes DEVICE_STATE bytes 34/47/48/60, the VMI's remote control
+  display, and the physical fan speed (verified via vibration sensor on
+  2026-02-08).
+- The phone sends only 0x18 for fan button taps (no SETTINGS alongside).
+- The VMI's physical remote (RF) can also change the same bytes and fan speed
   via a different control path.
 
 **DEVICE_STATE unknowns:**
+- Byte 32: changes with sensor select (0x18), purpose unknown. Verified
+  NOT to be Remote temperature (byte stayed at 19 while app showed 17°C).
 - Byte 48: shows value 2 when selector=2, value 1 when selector=0 or 1.
   Doesn't cleanly track either mode or sensor. Purpose unknown.
 - Byte 60: changes with every 0x18 transition, wide range of values.

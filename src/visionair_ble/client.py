@@ -41,6 +41,7 @@ from .protocol import (
     build_settings_packet,
     build_status_request,
     parse_schedule_config,
+    parse_schedule_data,
     parse_sensors,
     parse_status,
 )
@@ -191,15 +192,16 @@ class VisionAirClient:
     ) -> DeviceStatus:
         """Get device status with fresh sensor readings.
 
-        Requests both PROBE_SENSORS (probe1/probe2 temps, humidity) and
-        DEVICE_STATE (device config, airflow mode, remote humidity).
-        Probe temperatures from PROBE_SENSORS override the less reliable
-        values in DEVICE_STATE.
+        Sends a FULL_DATA_Q request, which triggers the device to respond with:
+        - DEVICE_STATE (0x01): device config, airflow mode, remote humidity
+        - SCHEDULE (0x02): remote temperature and humidity
+        - PROBE_SENSORS (0x03): probe temperatures and humidity
 
-        Humidity sources:
-        - Remote humidity: DEVICE_STATE packet byte 4 (always present)
-        - Probe 1 humidity: PROBE_SENSORS packet byte 8
-        - Probe 2: No humidity sensor
+        Sensor data sources:
+        - Remote temperature: SCHEDULE packet byte 11
+        - Remote humidity: DEVICE_STATE packet byte 4
+        - Probe 1 temp/humidity: PROBE_SENSORS packet bytes 6/8
+        - Probe 2 temperature: PROBE_SENSORS packet byte 11
 
         Args:
             timeout: How long to wait for each notification in seconds
@@ -215,10 +217,11 @@ class VisionAirClient:
 
         probe_data: bytes | None = None
         status_data: bytes | None = None
+        schedule_data: bytes | None = None
         new_packet = asyncio.Event()
 
         def handler(*args: Any) -> None:
-            nonlocal probe_data, status_data
+            nonlocal probe_data, status_data, schedule_data
             data = bytes(args[-1])
             if bytes(data[:2]) != MAGIC:
                 return
@@ -226,23 +229,20 @@ class VisionAirClient:
                 probe_data = data
             elif data[2] == PacketType.DEVICE_STATE:
                 status_data = data
+            elif data[2] == PacketType.SCHEDULE:
+                schedule_data = data
             new_packet.set()
 
         await self._client.start_notify(self._status_char, handler)
         try:
-            # Request probe sensors and device state
-            for cmd in [
-                build_sensor_request(),
-                build_status_request(),
-            ]:
-                if not self._client.is_connected:
-                    break
+            # FULL_DATA_Q returns DEVICE_STATE + SCHEDULE + PROBE_SENSORS
+            if self._client.is_connected:
                 await self._client.write_gatt_char(
-                    self._command_char, cmd, response=True
+                    self._command_char, build_full_data_request(), response=True
                 )
 
-            # Collect notifications until we have both responses or timeout
-            for _ in range(5):
+            # Collect notifications until we have all responses or timeout
+            for _ in range(8):
                 if not self._client.is_connected:
                     break
                 new_packet.clear()
@@ -250,7 +250,7 @@ class VisionAirClient:
                     await asyncio.wait_for(new_packet.wait(), timeout=timeout)
                 except TimeoutError:
                     break
-                if probe_data and status_data:
+                if probe_data and status_data and schedule_data:
                     break
 
         finally:
@@ -266,7 +266,13 @@ class VisionAirClient:
         if not status:
             raise ValueError("Invalid status response")
 
-        # Override with probe sensor readings (more reliable than DEVICE_STATE)
+        # Remote temperature and humidity from SCHEDULE packet
+        if schedule_data:
+            remote_temp, remote_humidity = parse_schedule_data(schedule_data)
+            if remote_temp is not None:
+                status = replace(status, temp_remote=remote_temp)
+
+        # Probe sensor readings from PROBE_SENSORS packet
         sensors = parse_sensors(probe_data) if probe_data else None
         if sensors:
             if sensors.temp_probe1 is not None:

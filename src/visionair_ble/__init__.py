@@ -72,6 +72,7 @@ from .protocol import (
     format_sensors,
     is_visionair_device,
     parse_schedule_config,
+    parse_schedule_data,
     parse_sensors,
     parse_status,
 )
@@ -111,6 +112,7 @@ __all__ = [
     "format_sensors",
     "is_visionair_device",
     "parse_schedule_config",
+    "parse_schedule_data",
     "parse_sensors",
     "parse_status",
 ]
