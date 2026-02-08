@@ -162,7 +162,6 @@ a5b6 10 00 05 03 00 00 00 00 16
 
 | Offset | Description | Values |
 |--------|-------------|--------|
-| 4 | Remote humidity (%) | Direct % |
 | 22-23 | Configured volume (m³) (LE u16) | e.g. 363 |
 | 26-27 | Operating days (LE u16) | e.g. 634 |
 | 28-29 | Filter life days (LE u16) | e.g. 330 |
@@ -231,7 +230,6 @@ to get all three packets in one request:
 |---------|--------|--------|-------|
 | Remote temperature | SCHEDULE (0x02) | byte 11 | Direct °C |
 | Remote humidity | SCHEDULE (0x02) | byte 13 | Direct % |
-| Remote humidity | DEVICE_STATE (0x01) | byte 4 | Also available here |
 | Probe 1 temperature | PROBE_SENSORS (0x03) | byte 6 | Direct °C |
 | Probe 1 humidity | PROBE_SENSORS (0x03) | byte 8 | Direct % |
 | Probe 2 temperature | PROBE_SENSORS (0x03) | byte 11 | Direct °C |
@@ -535,7 +533,7 @@ The volume is configured during professional installation based on the ventilate
 |--------|------|-------------|---------|
 | 0-1 | 2 | Magic | `a5b6` |
 | 2 | 1 | Type | `0x01` |
-| 4 | 1 | Remote humidity (%) | 55 |
+| 4 | 1 | Remote humidity (%) — stale, use SCHEDULE byte 13 | 55 |
 | 5-7 | 3 | Unknown (constant per device) | `68 25 40` |
 | 8 | 1 | Unknown (always 18 in captures) | 18 |
 | 22-23 | 2 | Configured volume (m³) (LE u16) | 363 |
