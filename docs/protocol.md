@@ -32,6 +32,22 @@ The VisionAir protocol is simple in structure but spread across multiple respons
 
 **One command type does almost everything:** `REQUEST` (type `0x10`) is the primary command. A single parameter byte selects the operation — querying device state, reading sensors, changing fan speed, toggling preheat, and more. A second type, `SETTINGS` (type `0x1a`), handles clock sync and configuration writes.
 
+**Packet structure:** Every packet (commands and responses) uses the same envelope:
+
+```
+┌───────┬──────┬─────────────────────┬──────────┐
+│ Magic │ Type │ Payload             │ Checksum │
+│ a5 b6 │ 1 B  │ variable            │ XOR      │
+└───────┴──────┴─────────────────────┴──────────┘
+
+REQUEST command example (param 0x06 = "get everything"):
+
+  a5 b6  10  06 05 06 00 00 00 00  15
+  ╰─┬──╯ ╰┬╯ ╰──────┬───────────╯ ╰┬╯
+  magic  type    payload          checksum
+         (REQUEST)  ╰─ param byte
+```
+
 **Three main response packets carry all the data:**
 
 | Packet | Type | Contains |
