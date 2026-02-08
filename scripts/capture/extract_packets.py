@@ -220,11 +220,8 @@ def decode_device_state_packet(hex_data: str) -> dict:
     return {
         'device_id': int.from_bytes(data[5:8], 'little'),  # Bytes 5-7, constant per device
         # Known sensor fields
-        'sensor_selector': data[34],      # 0=Probe2, 1=Probe1, 2=Remote
-        'active_temp': data[32],          # Live temperature for selected sensor
-        # Byte 32 is the ONLY live temperature - others (35, 42) may be stale
-        # Byte 8 is NOT a temperature (always 18 in captures)
-        'remote_temp': data[32] if data[34] == 2 else None,
+        'mode_selector': data[34],        # 0=LOW, 1=MEDIUM, 2=HIGH
+        'unknown_32': data[32],           # Changes with mode (0x18), purpose unknown
         'remote_humidity': data[4],       # Byte 4: Remote humidity (direct %)
         'probe1_temp': data[32] if data[34] == 1 else data[35],  # byte 35 may be stale
         'probe2_temp': data[32] if data[34] == 0 else data[42],  # byte 42 may be stale
@@ -314,11 +311,11 @@ def print_summary(packets: dict, output_format: str = 'text'):
         for i, pkt in enumerate(device_state_pkts[:5]):  # Show first 5
             decoded = decode_device_state_packet(pkt['hex'])
             print(f"\nDevice State #{i+1}:")
-            print(f"  Remote: {decoded['remote_temp']}°C, {decoded['remote_humidity']}%")
+            print(f"  Remote humidity: {decoded['remote_humidity']}%")
             print(f"  Probe1: {decoded['probe1_temp']}°C")
             print(f"  Probe2: {decoded['probe2_temp']}°C")
-            print(f"  Sensor selector: {decoded['sensor_selector']} ({['Probe2','Probe1','Remote'][decoded['sensor_selector']] if decoded['sensor_selector'] < 3 else '?'})")
-            print(f"  Active temp: {decoded['active_temp']}°C")
+            print(f"  Mode selector: {decoded['mode_selector']} ({['LOW','MEDIUM','HIGH'][decoded['mode_selector']] if decoded['mode_selector'] < 3 else '?'})")
+            print(f"  Unknown B32: {decoded['unknown_32']}")
             print(f"  Airflow: {decoded['airflow_m3h']} m³/h (indicator={decoded['airflow_indicator']})")
             print(f"  Preheat: {'ON' if decoded['preheat_enabled'] else 'OFF'} at {decoded['preheat_temp']}°C")
             print(f"  Summer: {'ON' if decoded['summer_limit_enabled'] else 'OFF'}")
@@ -395,9 +392,8 @@ def print_checkpoint_correlation(packets: dict, checkpoints: list, window: int =
             print(f"    [{pkt['timestamp']}]")
             print(f"      Byte 4: {decoded.get('bytes_0_10', [0]*5)[4]} (current 'humidity')")
             print(f"      Byte 60: {decoded['byte60']} (÷2 = {decoded['byte60_div2']:.1f}%)")
-            print(f"      Remote temp: {decoded['remote_temp']}°C")
             print(f"      Probe1 temp: {decoded['probe1_temp']}°C")
-            print(f"      Sensor: {decoded['sensor_selector']}")
+            print(f"      Mode: {decoded['mode_selector']}")
 
 
 def main():

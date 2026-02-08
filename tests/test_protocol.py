@@ -23,7 +23,7 @@ from visionair_ble.protocol import (
     build_schedule_config_request,
     build_schedule_toggle,
     build_schedule_write,
-    build_sensor_select_request,
+    build_mode_select_request,
     build_settings_packet,
     build_status_request,
     calc_checksum,
@@ -63,28 +63,28 @@ class TestPacketBuilding:
         assert packet == bytes.fromhex("a5b6100005030000000016")
         assert verify_checksum(packet)
 
-    def test_build_sensor_select_low(self):
-        """Test sensor select LOW/Probe2 (REQUEST 0x18 value=0)."""
-        packet = build_sensor_select_request(AirflowLevel.LOW)
+    def test_build_mode_select_low(self):
+        """Test airflow mode LOW command (REQUEST 0x18 value=0)."""
+        packet = build_mode_select_request(AirflowLevel.LOW)
         assert packet == bytes.fromhex("a5b610060518000000000b")
         assert verify_checksum(packet)
 
-    def test_build_sensor_select_medium(self):
+    def test_build_mode_select_medium(self):
         """Test airflow mode MEDIUM command (REQUEST 0x18 value=1)."""
-        packet = build_sensor_select_request(AirflowLevel.MEDIUM)
+        packet = build_mode_select_request(AirflowLevel.MEDIUM)
         assert packet == bytes.fromhex("a5b610060518000000010a")
         assert verify_checksum(packet)
 
-    def test_build_sensor_select_high(self):
+    def test_build_mode_select_high(self):
         """Test airflow mode HIGH command (REQUEST 0x18 value=2)."""
-        packet = build_sensor_select_request(AirflowLevel.HIGH)
+        packet = build_mode_select_request(AirflowLevel.HIGH)
         assert packet == bytes.fromhex("a5b6100605180000000209")
         assert verify_checksum(packet)
 
-    def test_build_sensor_select_invalid(self):
+    def test_build_mode_select_invalid(self):
         """Test airflow request with invalid mode raises."""
         with pytest.raises(ValueError, match="Mode must be"):
-            build_sensor_select_request(99)
+            build_mode_select_request(99)
 
     def test_build_boost_on(self):
         """Test BOOST ON command."""
@@ -210,7 +210,7 @@ class TestStatusParsing:
         assert status.summer_limit_temp == 26
         assert status.preheat_temp == 16
         assert status.boost_active is False
-        assert status.sensor_name == "Remote Control"
+        assert status.mode_name == "High"
 
     def test_parse_status_airflow_modes(self):
         """Test parsing airflow modes from indicator bytes.

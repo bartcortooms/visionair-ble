@@ -29,7 +29,7 @@ from .protocol import (
     PacketType,
     ScheduleConfig,
     SensorData,
-    build_sensor_select_request,
+    build_mode_select_request,
     build_boost_command,
     build_full_data_request,
     build_holiday_command,
@@ -297,8 +297,8 @@ class VisionAirClient:
     ) -> DeviceStatus:
         """Set airflow mode.
 
-        Uses REQUEST param 0x18 (sensor select) which also changes the fan
-        speed. This is the mechanism used by the VMI+ phone app.
+        Uses REQUEST param 0x18 to set the fan speed. This is the mechanism
+        used by the VMI+ phone app.
 
         Args:
             mode: Airflow mode ("low", "medium", or "high")
@@ -325,9 +325,8 @@ class VisionAirClient:
     ) -> DeviceStatus:
         """Set airflow level.
 
-        Uses REQUEST param 0x18 (sensor select), which also changes the fan
-        speed. This is the mechanism used by the VMI+ app. The device responds
-        with a DEVICE_STATE packet.
+        Uses REQUEST param 0x18 to set the fan speed. This is the mechanism
+        used by the VMI+ app. The device responds with a DEVICE_STATE packet.
 
         Args:
             airflow: AirflowLevel.LOW (1), MEDIUM (2), or HIGH (3)
@@ -342,7 +341,7 @@ class VisionAirClient:
         """
         self._find_characteristics()
 
-        packet = build_sensor_select_request(airflow)
+        packet = build_mode_select_request(airflow)
 
         status_data: bytes | None = None
         event = asyncio.Event()

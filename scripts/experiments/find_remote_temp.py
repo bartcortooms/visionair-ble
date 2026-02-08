@@ -65,8 +65,8 @@ KNOWN_DS_BYTES = {
     22: "configured_volume[0]", 23: "configured_volume[1]",
     26: "operating_days[0]", 27: "operating_days[1]",
     28: "filter_days[0]", 29: "filter_days[1]",
-    32: "TEMP_ACTIVE (mode-dependent)",
-    34: "SENSOR_SELECTOR (mode index)",
+    32: "UNKNOWN_32 (changes with mode 0x18)",
+    34: "MODE_SELECTOR (0=LOW, 1=MEDIUM, 2=HIGH)",
     35: "temp_probe1 (unreliable)",
     38: "summer_limit_temp",
     42: "temp_probe2 (unreliable)",
@@ -216,8 +216,8 @@ async def main():
         ds = responses["DEVICE_STATE"]
         print("\n--- DEVICE_STATE known fields ---")
         print(f"  byte[4]  Remote humidity: {ds[4]}%")
-        print(f"  byte[32] TEMP_ACTIVE: {ds[32]}°C")
-        print(f"  byte[34] SENSOR_SELECTOR: {ds[34]}")
+        print(f"  byte[32] UNKNOWN_32: {ds[32]}")
+        print(f"  byte[34] MODE_SELECTOR: {ds[34]}")
         print(f"  byte[35] temp_probe1 (unreliable): {ds[35]}°C")
         print(f"  byte[42] temp_probe2 (unreliable): {ds[42]}°C")
         print(f"  byte[47] airflow_indicator: 0x{ds[47]:02x}")

@@ -75,8 +75,8 @@ XOR all payload bytes (everything between magic prefix and checksum).
 Commands are written to characteristic handle 0x0013. There are two main command types:
 
 - **REQUEST (0x10):** General-purpose command envelope. Used for data queries
-  (device state, sensors, schedule) and state changes (airflow mode/sensor
-  selection, boost, preheat, holiday). The specific operation is determined by
+  (device state, sensors, schedule) and state changes (airflow mode, boost,
+  preheat, holiday). The specific operation is determined by
   the parameter byte. This is the primary way the phone interacts with the device.
 - **SETTINGS (0x1a):** Configuration writes. The phone sends these periodically
   with varying byte values. Not used for fan mode changes (those go through
@@ -107,15 +107,15 @@ a5b6 10 06 05 07 00 00 00 00 14
 
 Returns current probe temperatures and humidity.
 
-#### Mode Select (type 0x10, param 0x18)
+#### Fan Speed Control (type 0x10, param 0x18)
 
-Selects one of three device modes, setting the physical fan speed.
+Sets the physical fan speed to one of three modes.
 
-| Byte 9 | Sensor | Indicator | Packet |
-|--------|--------|-----------|--------|
-| 0x00 | Probe 2 (Air inlet) | 0x68 (LOW) | `a5b610060518000000000b` |
-| 0x01 | Probe 1 (Resistor outlet) | 0xC2 (MEDIUM) | `a5b610060518000000010a` |
-| 0x02 | Remote Control | 0x26 (HIGH) | `a5b6100605180000000209` |
+| Byte 9 | Mode | Indicator | Packet |
+|--------|------|-----------|--------|
+| 0x00 | LOW | 0x68 | `a5b610060518000000000b` |
+| 0x01 | MEDIUM | 0xC2 | `a5b610060518000000010a` |
+| 0x02 | HIGH | 0x26 | `a5b6100605180000000209` |
 
 The device responds with an updated DEVICE_STATE packet where:
 - Byte 34 matches the requested value
@@ -401,8 +401,8 @@ Responses arrive as notifications on characteristic handle 0x000e. Subscribe by 
 | 22-23 | 2 | Configured volume (m³) (LE u16) | 363 |
 | 26-27 | 2 | Operating days (LE u16) | 634 |
 | 28-29 | 2 | Filter life days (LE u16) | 330 |
-| 32 | 1 | Unknown (changes with sensor select, purpose unknown) | 19 |
-| 34 | 1 | Sensor/mode selector (0=Probe2/LOW, 1=Probe1/MED, 2=Remote/HIGH) | 0/1/2 |
+| 32 | 1 | Unknown (changes with mode 0x18, purpose unknown) | 19 |
+| 34 | 1 | Mode selector (0=LOW, 1=MEDIUM, 2=HIGH) | 0/1/2 |
 | 35 | 1 | Probe 1 temperature (°C) — unreliable, use PROBE_SENSORS | 16 |
 | 38 | 1 | Summer limit temp threshold (°C) | 26 |
 | 42 | 1 | Probe 2 temperature (°C) — unreliable, use PROBE_SENSORS | 11 |

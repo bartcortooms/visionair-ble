@@ -129,11 +129,11 @@ async def ble_set_mode(mode: str) -> dict:
             "action": f"set_{mode}",
             "airflow_mode": status.airflow_mode,
             "airflow_indicator": f"0x{status.airflow_indicator:02x}",
-            "sensor_selector": status.sensor_selector,
+            "mode_selector": status.mode_selector,
         }
         print(f"  [{ts()}] BLE response: mode={status.airflow_mode}, "
               f"indicator=0x{status.airflow_indicator:02x}, "
-              f"selector={status.sensor_selector}")
+              f"selector={status.mode_selector}")
         return result
 
 
@@ -148,7 +148,7 @@ async def ble_get_status() -> dict:
                 "timestamp": ts(),
                 "airflow_mode": status.airflow_mode,
                 "airflow_indicator": f"0x{status.airflow_indicator:02x}",
-                "sensor_selector": status.sensor_selector,
+                "mode_selector": status.mode_selector,
                 "airflow": status.airflow,
             }
             print(f"  [{ts()}] Status: mode={status.airflow_mode}, "

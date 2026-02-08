@@ -222,8 +222,8 @@ class DeviceStateOffset:
     CONFIGURED_VOLUME = 22      # 2 bytes, little-endian
     OPERATING_DAYS = 26         # 2 bytes, little-endian
     FILTER_DAYS = 28            # 2 bytes, little-endian
-    UNKNOWN_32 = 32             # Changes with sensor select (0x18), purpose unknown
-    SENSOR_SELECTOR = 34        # Sensor/mode selector: 0=Probe2/LOW, 1=Probe1/MEDIUM, 2=Remote/HIGH
+    UNKNOWN_32 = 32             # Changes with mode (0x18), purpose unknown
+    MODE_SELECTOR = 34          # Fan speed mode: 0=LOW, 1=MEDIUM, 2=HIGH
     TEMP_PROBE1 = 35            # Outlet temp (unreliable, use PROBE_SENSORS)
     SUMMER_LIMIT_TEMP = 38
     TEMP_PROBE2 = 42            # Inlet temp (unreliable, use PROBE_SENSORS)
@@ -322,11 +322,11 @@ SCHEDULE_MODE_BYTES: dict[int, int] = {
 
 SCHEDULE_MODE_LOOKUP: dict[int, int] = {v: k for k, v in SCHEDULE_MODE_BYTES.items()}
 
-# Sensor selector (status byte 34)
-SENSOR_NAMES: dict[int, str] = {
-    0: "Probe 2 (Air inlet)",
-    1: "Probe 1 (Resistor outlet)",
-    2: "Remote Control",
+# Mode selector (status byte 34)
+MODE_NAMES: dict[int, str] = {
+    0: "Low",
+    1: "Medium",
+    2: "High",
 }
 
 
@@ -350,8 +350,8 @@ class DeviceStatus:
     # Internal fields (no sensor metadata)
     device_id: int  # Bytes 5-7, constant per device (not a true ID, just a unique-ish value)
     airflow_indicator: int
-    sensor_selector: int
-    sensor_name: str
+    mode_selector: int
+    mode_name: str
 
     # Sensors - airflow
     airflow: int = field(metadata=sensor("Airflow", unit="m³/h", device_class="volume_flow_rate"))
@@ -597,7 +597,7 @@ def build_full_data_request() -> bytes:
     return build_request(RequestParam.FULL_DATA, extended=True)
 
 
-def build_sensor_select_request(mode: int) -> bytes:
+def build_mode_select_request(mode: int) -> bytes:
     """Build a mode select command packet (REQUEST param 0x18).
 
     Sets the fan speed. The phone app sends this when the user taps the
@@ -605,7 +605,7 @@ def build_sensor_select_request(mode: int) -> bytes:
 
     Args:
         mode: AirflowLevel.LOW (1), MEDIUM (2), or HIGH (3)
-              Maps to protocol values: LOW→0 (Probe2), MEDIUM→1 (Probe1), HIGH→2 (Remote)
+              Maps to protocol values: LOW→0, MEDIUM→1, HIGH→2
 
     Returns:
         Complete packet bytes
@@ -881,8 +881,8 @@ def parse_status(data: bytes) -> DeviceStatus | None:
         return None
 
     airflow_indicator = data[DeviceStateOffset.AIRFLOW_INDICATOR]
-    sensor_selector = data[DeviceStateOffset.SENSOR_SELECTOR]
-    sensor_name = SENSOR_NAMES.get(sensor_selector, f"Unknown ({sensor_selector})")
+    mode_selector = data[DeviceStateOffset.MODE_SELECTOR]
+    mode_name = MODE_NAMES.get(mode_selector, f"Unknown ({mode_selector})")
 
     # Configured volume from bytes 22-23 (little-endian uint16)
     configured_volume = None
@@ -943,8 +943,8 @@ def parse_status(data: bytes) -> DeviceStatus | None:
         preheat_temp=data[DeviceStateOffset.PREHEAT_TEMP],
         holiday_days=data[DeviceStateOffset.HOLIDAY_DAYS] if len(data) > DeviceStateOffset.HOLIDAY_DAYS else 0,
         boost_active=data[DeviceStateOffset.BOOST_ACTIVE] == 0x01 if len(data) > DeviceStateOffset.BOOST_ACTIVE else False,
-        sensor_selector=sensor_selector,
-        sensor_name=sensor_name,
+        mode_selector=mode_selector,
+        mode_name=mode_name,
         # Remote temperature is in the SCHEDULE packet (type 0x02), not here.
         # Use parse_schedule_data() on the SCHEDULE response to get temp_remote.
         # Probe temperatures: use get_sensors() / PROBE_SENSORS packet.

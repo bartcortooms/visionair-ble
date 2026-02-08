@@ -153,10 +153,10 @@ async def ble_set_mode(mode: AirflowLevel, mode_name: str) -> dict:
             status = parse_status(ds)
             entry["mode"] = status.airflow_mode
             entry["indicator"] = f"0x{status.airflow_indicator:02x}"
-            entry["selector"] = status.sensor_selector
+            entry["selector"] = status.mode_selector
             entry["raw_hex"] = ds.hex()
             print(f"  [{ts()}] BLE: mode={status.airflow_mode}, indicator={entry['indicator']}, "
-                  f"selector={status.sensor_selector}")
+                  f"selector={status.mode_selector}")
         else:
             entry["mode"] = None
             print(f"  [{ts()}] BLE: No response (command was sent)")
@@ -173,7 +173,7 @@ async def ble_readback(label: str) -> dict:
             status = parse_status(ds)
             entry["mode"] = status.airflow_mode
             entry["indicator"] = f"0x{status.airflow_indicator:02x}"
-            entry["selector"] = status.sensor_selector
+            entry["selector"] = status.mode_selector
             entry["ds_hex"] = ds.hex()
             print(f"  [{ts()}] [{label}] mode={status.airflow_mode}, indicator={entry['indicator']}")
         await asyncio.sleep(0.5)

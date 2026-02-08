@@ -46,7 +46,7 @@ def parse_key_bytes(data: bytes) -> dict:
         "operating_days_b26_27": int.from_bytes(data[26:28], "little"),
         "filter_days_b28_29": int.from_bytes(data[28:30], "little"),
         "unknown_b32": data[32],
-        "sensor_selector_b34": data[34],
+        "mode_selector_b34": data[34],
         "temp_probe1_b35": data[35],
         "temp_probe2_b42": data[42],
         "boost_active_b44": data[44],
@@ -131,11 +131,11 @@ async def main(address: str):
         for key, value in parsed.items():
             print(f"  {key}: {value}")
 
-        print("\n--- Sensor Selector Interpretation ---")
-        selector = parsed.get("sensor_selector_b34", -1)
-        sensor_names = {0: "Probe 2 (Air inlet)", 1: "Probe 1 (Resistor)", 2: "Remote Control"}
-        print(f"  Active sensor: {sensor_names.get(selector, f'Unknown ({selector})')}")
-        print(f"  Unknown B32: {parsed.get('unknown_b32')} (changes with sensor select, purpose unknown)")
+        print("\n--- Mode Selector Interpretation ---")
+        selector = parsed.get("mode_selector_b34", -1)
+        mode_names = {0: "Low", 1: "Medium", 2: "High"}
+        print(f"  Fan speed mode: {mode_names.get(selector, f'Unknown ({selector})')}")
+        print(f"  Unknown B32: {parsed.get('unknown_b32')} (changes with mode 0x18, purpose unknown)")
 
         # Now request history packet
         print("\n--- Sending History Request ---")
