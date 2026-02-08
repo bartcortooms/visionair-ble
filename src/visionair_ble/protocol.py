@@ -148,7 +148,7 @@ class PacketType:
     SCHEDULE_WRITE = 0x40       # Schedule config write (55 bytes) — experimental
     SCHEDULE_CONFIG = 0x46      # Schedule config response (182 bytes) — experimental
     SCHEDULE_QUERY = 0x47       # Schedule query — experimental
-    HOLIDAY_STATUS = 0x50       # Holiday mode status
+    UNKNOWN_50 = 0x50           # Unknown (triggered by param 0x2c, constant payload)
 
 
 class RequestParam:
@@ -165,7 +165,7 @@ class RequestParam:
     PROBE_SENSORS = 0x07        # Query probe sensor readings → PROBE_SENSORS response
     SCHEDULE_QUERY = 0x26       # Query schedule → SCHEDULE_QUERY (0x47) response
     SCHEDULE_CONFIG = 0x27      # Query schedule config → SCHEDULE_CONFIG (0x46) response
-    HOLIDAY_STATUS = 0x2C       # Query holiday status → HOLIDAY_STATUS (0x50) response
+    UNKNOWN_2C = 0x2C           # Unknown query → 0x50 response (constant payload)
 
     # Actions — device changes state and responds with updated DEVICE_STATE
     MODE_SELECT = 0x18          # Set fan speed (value: 0=LOW, 1=MEDIUM, 2=HIGH)
@@ -658,7 +658,7 @@ def build_preheat_request(enable: bool) -> bytes:
 # =============================================================================
 #
 # Holiday mode: Fully decoded. Uses REQUEST param 0x1a with days in byte 9.
-# Read back via DEVICE_STATE byte 43. The 0x50 response is constant/not useful.
+# Read back via DEVICE_STATE byte 43.
 #
 # Night Ventilation / Fixed Air Flow: Protocol understanding is incomplete.
 # These functions require _experimental=True flag to acknowledge the risks.
@@ -700,16 +700,17 @@ def build_holiday_command(days: int) -> bytes:
     return build_request(RequestParam.HOLIDAY, value=days, extended=True)
 
 
-def build_holiday_status_query() -> bytes:
-    """Build query to get Holiday mode status via type 0x50 response.
+def build_unknown_2c_query() -> bytes:
+    """Build query for REQUEST param 0x2c.
 
-    Note: The 0x50 response is constant and does not reflect holiday state.
-    Use DEVICE_STATE byte 43 (holiday_days) for reliable holiday status.
+    Triggers a 0x50 response with a constant payload whose purpose is unknown.
+    Initially observed during holiday mode captures, but the response does not
+    reflect holiday state.
 
     Returns:
         Complete packet bytes
     """
-    return build_request(RequestParam.HOLIDAY_STATUS, extended=True)
+    return build_request(RequestParam.UNKNOWN_2C, extended=True)
 
 
 def _raise_special_mode_unsupported(feature: str, *, _experimental: bool) -> None:

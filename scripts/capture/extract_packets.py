@@ -204,7 +204,7 @@ def get_type_name(msg_type: int) -> str:
         0x40: 'SCHEDULE_WRITE',
         0x46: 'SCHEDULE_CONFIG',
         0x47: 'SCHEDULE_QUERY',
-        0x50: 'HOLIDAY_STATUS',
+        0x50: 'UNKNOWN_50',
     }
     return names.get(msg_type, f'UNKNOWN_{msg_type:02x}')
 

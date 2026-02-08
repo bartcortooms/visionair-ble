@@ -295,11 +295,6 @@ Byte 9 carries the number of holiday days (0=OFF, 1-255=active). The device
 responds with a DEVICE_STATE packet (~130ms) reflecting the new value in
 byte 43 (`holiday_days`).
 
-**Reading holiday status:** Use DEVICE_STATE byte 43, not the 0x50 response.
-The 0x50 response (from `REQUEST` param `0x2c`) returns the same payload
-regardless of whether holiday mode is active or how many days are set. Its
-contents are not understood.
-
 **Response type:** The device responds with DEVICE_STATE (0x01), not
 SETTINGS_ACK (0x23). This differs from SETTINGS commands.
 
@@ -628,7 +623,7 @@ Value `0x0F` (all bits set) indicates all components healthy.
 | `0x40` | 55 bytes | Schedule Config Write |
 | `0x46` | 182 bytes | Schedule Config Response |
 | `0x47` | 26 bytes | Schedule Query |
-| `0x50` | varies | Holiday status (constant, not useful — use byte 43) |
+| `0x50` | varies | Unknown (triggered by param 0x2c, constant payload) |
 
 ### 8.5 Fan Speed Encoding
 
@@ -702,7 +697,7 @@ Value `0x0F` (all bits set) indicates all components healthy.
 - Device State byte 60 — values 100-210 observed, possibly humidity-related
 
 **Responses:**
-- Holiday Status (0x50) response structure — constant payload, not useful for state
+- 0x50 response structure (triggered by param 0x2c, constant payload, purpose unknown)
 - Settings Ack (0x23) — structure not documented
 
 ## 10. References

@@ -14,7 +14,7 @@ This document tracks which protocol features from [protocol.md](protocol.md) are
 | Preheat Toggle (0x10, param 0x2F) | Yes | Yes | `build_preheat_request()` |
 | Settings (0x1a) - airflow/summer/temp | Yes | Yes | `build_settings_packet()` |
 | Holiday Command (0x10, param 0x1a) | Yes | Yes | `build_holiday_command(days)`, `VisionAirClient.set_holiday()` / `clear_holiday()` |
-| Holiday Status Query (0x10, param 0x2c) | Yes | Yes | `build_holiday_status_query()` |
+| Unknown Query (0x10, param 0x2c) | Yes | Yes | `build_unknown_2c_query()` |
 | Night Ventilation (0x1a, byte7=0x04) — hypothetical | Partial | Experimental | `build_night_ventilation_activate()` — [#6](https://github.com/bartcortooms/visionair-ble/issues/6) |
 | Fixed Air Flow (0x1a, byte7=0x04) — hypothetical | Partial | Experimental | `build_fixed_airflow_activate()` — packet captured ([#7](https://github.com/bartcortooms/visionair-ble/issues/7)) but protocol path uncertain ([#14](https://github.com/bartcortooms/visionair-ble/issues/14)) |
 | Schedule Config Request (0x10, param 0x27) | Yes | Yes | `build_schedule_config_request()` — [#2](https://github.com/bartcortooms/visionair-ble/issues/2) |
@@ -36,7 +36,7 @@ This document tracks which protocol features from [protocol.md](protocol.md) are
 | Schedule Config Response (0x46) | Yes | Yes | `parse_schedule_config()` — validated against real captures |
 | Settings Ack (0x23) | Partial | No | — |
 | Status - holiday_days (byte 43) | Yes | Yes | `parse_status()` → `DeviceStatus.holiday_days` |
-| Holiday Status (0x50) | Partial | No | Constant response, not useful for state |
+| Unknown (0x50) | Partial | No | Constant response, purpose unknown |
 
 ## Data Structures
 
