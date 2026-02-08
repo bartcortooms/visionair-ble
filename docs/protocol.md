@@ -533,7 +533,7 @@ The volume is configured during professional installation based on the ventilate
 |--------|------|-------------|---------|
 | 0-1 | 2 | Magic | `a5b6` |
 | 2 | 1 | Type | `0x01` |
-| 4 | 1 | Remote humidity (%) — stale, use SCHEDULE byte 13 | 55 |
+| 4 | 1 | Unknown (constant 55 in all captures, does not track humidity) | 55 |
 | 5-7 | 3 | Unknown (constant per device) | `68 25 40` |
 | 8 | 1 | Unknown (always 18 in captures) | 18 |
 | 22-23 | 2 | Configured volume (m³) (LE u16) | 363 |

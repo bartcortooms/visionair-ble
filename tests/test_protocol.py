@@ -202,7 +202,8 @@ class TestStatusParsing:
         assert status.temp_remote is None
         assert status.temp_probe1 is None
         assert status.temp_probe2 is None
-        assert status.humidity_remote == 52
+        # Remote humidity is in the SCHEDULE packet, not DEVICE_STATE
+        assert status.humidity_remote is None
         assert status.filter_days == 331
         assert status.operating_days == 634
         assert status.preheat_enabled is True

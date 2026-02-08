@@ -271,11 +271,13 @@ class VisionAirClient:
         if not status:
             raise ValueError("Invalid status response")
 
-        # Remote temperature from SCHEDULE packet
+        # Remote temperature and humidity from SCHEDULE packet
         if schedule_data:
             remote_temp, remote_humidity = parse_schedule_data(schedule_data)
             if remote_temp is not None:
                 status = replace(status, temp_remote=remote_temp)
+            if remote_humidity is not None:
+                status = replace(status, humidity_remote=remote_humidity)
 
         # Probe sensor readings from PROBE_SENSORS packet
         sensors = parse_sensors(probe_data) if probe_data else None

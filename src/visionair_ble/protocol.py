@@ -216,7 +216,6 @@ class DeviceStateOffset:
     """
 
     TYPE = 2
-    HUMIDITY = 4                # Humidity % from remote (1 byte)
     UNKNOWN_5_7 = 5             # Constant per device (3 bytes) - possibly device identifier
     UNKNOWN_8 = 8               # Always 18 in captures, purpose unknown
     CONFIGURED_VOLUME = 22      # 2 bytes, little-endian
@@ -913,9 +912,6 @@ def parse_status(data: bytes) -> DeviceStatus | None:
         airflow_mode = "high"
         airflow = airflow_high or 0
 
-    # Humidity from remote
-    humidity = data[DeviceStateOffset.HUMIDITY] if len(data) > DeviceStateOffset.HUMIDITY else None
-
     # Equipment life fields (little-endian uint16)
     filter_days = None
     operating_days = None
@@ -951,7 +947,9 @@ def parse_status(data: bytes) -> DeviceStatus | None:
         temp_remote=None,
         temp_probe1=None,
         temp_probe2=None,
-        humidity_remote=humidity,
+        # Remote humidity is in the SCHEDULE packet (type 0x02), not here.
+        # Use parse_schedule_data() on the SCHEDULE response to get humidity_remote.
+        humidity_remote=None,
         filter_days=filter_days,
         operating_days=operating_days,
     )
