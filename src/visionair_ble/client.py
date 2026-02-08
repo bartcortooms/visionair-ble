@@ -192,10 +192,14 @@ class VisionAirClient:
     ) -> DeviceStatus:
         """Get device status with fresh sensor readings.
 
-        Sends a FULL_DATA_Q request, which triggers the device to respond with:
+        Sends three separate requests to collect all sensor data:
         - DEVICE_STATE (0x01): device config, airflow mode, remote humidity
-        - SCHEDULE (0x02): remote temperature and humidity
         - PROBE_SENSORS (0x03): probe temperatures and humidity
+        - FULL_DATA_Q (0x06): triggers SCHEDULE (0x02) with remote temperature
+
+        Separate requests are needed because some BLE proxies (e.g. ESPHome)
+        only forward one notification per write command. FULL_DATA_Q returns
+        multiple packets but the proxy may drop all but the first.
 
         Sensor data sources:
         - Remote temperature: SCHEDULE packet byte 11
@@ -235,23 +239,24 @@ class VisionAirClient:
 
         await self._client.start_notify(self._status_char, handler)
         try:
-            # FULL_DATA_Q returns DEVICE_STATE + SCHEDULE + PROBE_SENSORS
-            if self._client.is_connected:
-                await self._client.write_gatt_char(
-                    self._command_char, build_full_data_request(), response=True
-                )
-
-            # Collect notifications until we have all responses or timeout
-            for _ in range(8):
+            # Send each request and wait for its response before the next.
+            # Some BLE proxies (e.g. ESPHome) drop notifications if multiple
+            # commands are sent before their responses are consumed.
+            for cmd in [
+                build_full_data_request(),
+                build_status_request(),
+                build_sensor_request(),
+            ]:
                 if not self._client.is_connected:
                     break
                 new_packet.clear()
+                await self._client.write_gatt_char(
+                    self._command_char, cmd, response=True
+                )
                 try:
                     await asyncio.wait_for(new_packet.wait(), timeout=timeout)
                 except TimeoutError:
-                    break
-                if probe_data and status_data and schedule_data:
-                    break
+                    pass
 
         finally:
             try:
@@ -266,7 +271,7 @@ class VisionAirClient:
         if not status:
             raise ValueError("Invalid status response")
 
-        # Remote temperature and humidity from SCHEDULE packet
+        # Remote temperature from SCHEDULE packet
         if schedule_data:
             remote_temp, remote_humidity = parse_schedule_data(schedule_data)
             if remote_temp is not None:
