@@ -29,6 +29,8 @@ E2E tests require a real VisionAir device. Configuration via `.env` or CLI flags
 - `ESPHOME_PROXY_HOST` - ESPHome BLE proxy IP address (or `--proxy-host`)
 - `ESPHOME_API_KEY` - ESPHome API encryption key (or `--proxy-key`)
 
+**Runtime:** E2E tests take approximately **4 minutes** due to BLE connection setup, proxy recovery delays between tests, and the reliability test running multiple iterations.
+
 **Important:** The VisionAir device only supports one BLE connection at a time. Before running E2E tests:
 1. **Disable Home Assistant's BLE proxy integration** - HA must not be using the ESPHome proxy
 2. **Disconnect the phone** - Either disable Bluetooth on the phone (`adb shell svc bluetooth disable`) or force-stop the VMI app (`adb shell am force-stop com.ventilairsec.ventilairsecinstallateur`)

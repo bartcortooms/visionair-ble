@@ -32,7 +32,7 @@ from visionair_ble.protocol import (
     AirflowLevel,
     PacketType,
     build_schedule_toggle,
-    build_sensor_select_request,
+    build_mode_select_request,
     build_status_request,
     parse_status,
 )
@@ -118,7 +118,7 @@ async def main():
     async def set_mode(mode, name):
         async with connect() as client:
             sc, cc = find_chars(client)
-            ds = await send_and_read(client, cc, sc, build_sensor_select_request(mode))
+            ds = await send_and_read(client, cc, sc, build_mode_select_request(mode))
             if ds:
                 s = parse_status(ds)
                 print(f"  [{ts()}] BLE confirms: mode={s.airflow_mode}, indicator=0x{s.airflow_indicator:02x}")

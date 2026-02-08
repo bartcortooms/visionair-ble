@@ -168,7 +168,7 @@ class RequestParam:
     HOLIDAY_STATUS = 0x2C       # Query holiday status → HOLIDAY_STATUS (0x50) response
 
     # Actions — device changes state and responds with updated DEVICE_STATE
-    SENSOR_SELECT = 0x18        # Select mode and fan speed (value: 0=LOW, 1=MEDIUM, 2=HIGH)
+    MODE_SELECT = 0x18          # Set fan speed (value: 0=LOW, 1=MEDIUM, 2=HIGH)
     # Changes DEVICE_STATE bytes 34 (selector), 47 (indicator), 60,
     # the physical fan speed, and the VMI remote display.
     # The phone sends this when the user taps LOW/MEDIUM/HIGH fan buttons.
@@ -623,7 +623,7 @@ def build_mode_select_request(mode: int) -> bytes:
             f"Mode must be AirflowLevel.LOW ({AirflowLevel.LOW}), "
             f"MEDIUM ({AirflowLevel.MEDIUM}), or HIGH ({AirflowLevel.HIGH})"
         )
-    return build_request(RequestParam.SENSOR_SELECT, value=mode_values[mode], extended=True)
+    return build_request(RequestParam.MODE_SELECT, value=mode_values[mode], extended=True)
 
 
 def build_boost_command(enable: bool) -> bytes:

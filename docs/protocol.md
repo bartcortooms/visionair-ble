@@ -79,8 +79,7 @@ Commands are written to characteristic handle 0x0013. There are two main command
   preheat, holiday). The specific operation is determined by
   the parameter byte. This is the primary way the phone interacts with the device.
 - **SETTINGS (0x1a):** Configuration writes. The phone sends these periodically
-  with varying byte values. Not used for fan mode changes (those go through
-  REQUEST param 0x18). The role of SETTINGS bytes 9-10 is unclear — see
+  with varying byte values. The role of SETTINGS bytes 9-10 is unclear — see
   [Open Questions](#open-questions).
 
 ### 4.1 Device State & Sensor Queries
@@ -123,8 +122,7 @@ The device responds with an updated DEVICE_STATE packet where:
 - Byte 60 changes (purpose unknown)
 
 When the user taps LOW/MEDIUM/HIGH in the phone app, the phone sends a
-single 0x18 request with the corresponding value. No SETTINGS packet is
-sent alongside it.
+single 0x18 request with the corresponding value.
 
 > **Note:** The device has an internal schedule that can autonomously change
 > the mode without any phone command. When testing 0x18 behavior, disable
@@ -175,7 +173,7 @@ Structure: `a5b6 1a 06 06 1a 02 <byte7> <byte8> <byte9> <byte10> <checksum>`
 | 0-1 | 2 | Magic `a5b6` |
 | 2 | 1 | Type `0x1a` |
 | 3-5 | 3 | Header `06 06 1a` |
-| 6 | 1 | Always `0x02` in captures (not the preheat toggle — see REQUEST 0x2F) |
+| 6 | 1 | Always `0x02` in captures |
 | 7 | 1 | Mode byte / day (see below) |
 | 8 | 1 | Hour or preheat temperature (see below) |
 | 9 | 1 | Minute (clock sync) or config byte |
@@ -220,8 +218,9 @@ encoded differently).
 > **Not yet verified:** Whether the same bytes carry config data (preheat temp,
 > airflow) when the user changes settings in the app. The config bytes (3-6)
 > were constant across all 29 SETTINGS packets in this capture. Early captures
-> may have used mode values 0x00/0x02 for config writes with different byte 8-10
-> semantics.
+> contained mode values 0x00/0x02 for config writes, but these have not been
+> reproduced in recent controlled captures. It is unclear whether bytes 8-10
+> carry different data in those cases.
 
 #### Holiday Command (type 0x10, param 0x1a)
 
@@ -408,7 +407,7 @@ Responses arrive as notifications on characteristic handle 0x000e. Subscribe by 
 | 42 | 1 | Probe 2 temperature (°C) — unreliable, use PROBE_SENSORS | 11 |
 | 43 | 1 | Holiday days remaining | 0=OFF, N=days |
 | 44 | 1 | BOOST active | 0=OFF, 1=ON |
-| 47 | 1 | Sensor/mode indicator | 38/104/194 |
+| 47 | 1 | Airflow indicator (0x68=LOW, 0xC2=MED, 0x26=HIGH) | 38/104/194 |
 | 48 | 1 | Unknown (1 or 2, correlates with byte 34) | 1/2 |
 | 49 | 1 | Unknown | — |
 | 50 | 1 | Summer limit enabled | `0x02`=ON |
@@ -420,24 +419,24 @@ Responses arrive as notifications on characteristic handle 0x000e. Subscribe by 
 
 Tracks the current fan speed mode. Matches the value sent via REQUEST param 0x18.
 
-| Value | Sensor | Airflow Mode |
-|-------|--------|-------------|
-| 0 | Probe 2 (Air inlet) | LOW |
-| 1 | Probe 1 (Resistor outlet) | MEDIUM |
-| 2 | Remote Control | HIGH |
+| Value | Fan Speed |
+|-------|-----------|
+| 0 | LOW |
+| 1 | MEDIUM |
+| 2 | HIGH |
 
-#### Sensor/Mode Indicator (byte 47)
+#### Airflow Indicator (byte 47)
 
-Each selector/mode value produces a distinct indicator value:
+Each mode value produces a distinct indicator value:
 
-| Selector | Indicator | ACH Factor | Airflow |
-|----------|-----------|------------|---------|
-| 0 (Probe 2 / LOW) | 0x68 (104) | × 0.36 | Lowest |
-| 1 (Probe 1 / MEDIUM) | 0xC2 (194) | × 0.45 | Mid |
-| 2 (Remote / HIGH) | 0x26 (38) | × 0.55 | Highest |
+| Mode | Indicator | ACH Factor | Airflow |
+|------|-----------|------------|---------|
+| 0 (LOW) | 0x68 (104) | × 0.36 | Lowest |
+| 1 (MEDIUM) | 0xC2 (194) | × 0.45 | Mid |
+| 2 (HIGH) | 0x26 (38) | × 0.55 | Highest |
 
-Use the ACH factor with the configured volume (bytes 22-23) to calculate
-actual airflow in m³/h.
+ACH = Air Changes per Hour. Multiply the factor by the configured volume
+(bytes 22-23, in m³) to get actual airflow in m³/h.
 
 #### Diagnostic Status Bitfield (byte 54)
 
@@ -450,7 +449,7 @@ actual airflow in m³/h.
 
 Value `0x0F` (all bits set) indicates all components healthy.
 
-> **Note:** Bit-to-component mapping is assumed based on UI display order. Only value 0x0F (all healthy) has been observed.
+> **Note:** Bit meanings are inferred from the device's diagnostic UI component list, but only value 0x0F (all healthy) has been observed.
 
 ### 5.2 Schedule Response (type 0x02)
 
@@ -508,9 +507,8 @@ Contains current/live probe temperature and humidity readings.
 
 ## 6. Sensor Data Architecture
 
-Sensor data is spread across three packet types. All readings are available
-without changing the fan speed — use FULL_DATA_Q (param 0x06) to get all
-three packets in one request:
+Sensor data is spread across three packet types. Use FULL_DATA_Q (param 0x06)
+to get all three packets in one request:
 
 | Reading | Packet | Offset | Notes |
 |---------|--------|--------|-------|
@@ -524,27 +522,21 @@ three packets in one request:
 ### Getting All Readings
 
 Send a single **FULL_DATA_Q** request (param 0x06), which triggers three
-responses: DEVICE_STATE, SCHEDULE, and PROBE_SENSORS. This provides all
-sensor readings without changing the fan speed.
+responses: DEVICE_STATE, SCHEDULE, and PROBE_SENSORS.
 
 This is the polling pattern used by the VMI+ phone app:
 - **Home screen:** DEVICE_STATE_Q + FULL_DATA_Q every ~10 seconds
 - **Measurements screen:** PROBE_SENSORS_Q + FULL_DATA_Q every ~10 seconds
 
-The app never sends SENSOR_SELECT (0x18) for polling — it reads Remote
-temperature directly from the SCHEDULE response.
-
-> **Note:** The DEVICE_STATE packet contains Probe 1/2 temperatures at
-> bytes 35 and 42, but these are unreliable. Use PROBE_SENSORS for probe
-> readings. DEVICE_STATE byte 32 changes with sensor select (0x18) but its
-> purpose is unknown — it is NOT a reliable temperature source.
+> **Note:** DEVICE_STATE bytes 35 and 42 contain Probe 1/2 temperatures
+> but are unreliable — use PROBE_SENSORS for probe readings.
 
 ## 7. Data Encoding Reference
 
 ### 7.1 Fan Speed Control (REQUEST param 0x18)
 
 REQUEST param 0x18 controls the fan speed. The phone sends this when the
-user taps LOW/MEDIUM/HIGH. No SETTINGS packet is sent alongside it.
+user taps LOW/MEDIUM/HIGH.
 
 | 0x18 Value | Fan Speed | Indicator (byte 47) | ACH Factor |
 |-----------|-----------|---------------------|------------|
@@ -556,10 +548,6 @@ user taps LOW/MEDIUM/HIGH. No SETTINGS packet is sent alongside it.
 via vibration sensor on 2026-02-08, delta ~+0.007 m/s² for LOW→HIGH across
 two runs). It updates DEVICE_STATE bytes (34/47/48/60), the VMI's RF
 remote control display, and the fan motor speed.
-
-Sensor data does not depend on the 0x18 value — all sensor readings are
-available via FULL_DATA_Q regardless of the current fan speed setting
-(see Section 6).
 
 **SETTINGS bytes 9-10 are a clock sync, not airflow** — they carry the
 current minute and second. See the [Settings Command](#settings-command-type-0x1a)
@@ -622,9 +610,11 @@ See [implementation-status.md](implementation-status.md) for feature implementat
 - Bytes 7-10 carry a clock sync (day, hour, minute, second) during the phone's
   regular polling. Whether the same bytes serve a different purpose during
   config writes (summer limit changes, etc.) is not yet verified.
-- Early captures had "airflow byte" pairs (0x19/0x0a, 0x28/0x15, 0x07/0x30)
-  that don't match clock values. These may be from a different SETTINGS
-  sub-command (mode byte 0x00/0x02 vs 0x06/0x07) or were misidentified.
+- Early captures contained SETTINGS byte pairs matching known airflow modes
+  (0x19/0x0a=LOW, 0x28/0x15=MEDIUM, 0x07/0x30=HIGH). These do not appear
+  in recent controlled captures where bytes 7-10 consistently carry clock
+  sync data. They may be from a different SETTINGS sub-command (mode byte
+  0x00/0x02 vs 0x06/0x07).
 
 **Unknown REQUEST params:**
 - Param 0x29: the phone sends this heavily after connecting (~65 times with
@@ -633,21 +623,13 @@ See [implementation-status.md](implementation-status.md) for feature implementat
   0x18 to affect the fan motor.
 - Param 0x05: seen occasionally (268 occurrences across all captures).
 
-**Mode Select (param 0x18):**
-- 0x18 changes DEVICE_STATE bytes 34/47/48/60, the VMI's remote control
-  display, and the physical fan speed (verified via vibration sensor on
-  2026-02-08).
-- The phone sends only 0x18 for fan button taps (no SETTINGS alongside).
-- The VMI's physical remote (RF) can also change the same bytes and fan speed
-  via a different control path.
-
 **DEVICE_STATE unknowns:**
-- Byte 32: changes with sensor select (0x18), purpose unknown. Verified
-  NOT to be Remote temperature (byte stayed at 19 while app showed 17°C).
-- Byte 48: shows value 2 when selector=2, value 1 when selector=0 or 1.
-  Doesn't cleanly track either mode or sensor. Purpose unknown.
+- Byte 32: changes with mode (0x18), purpose unknown. Does not correlate
+  with Remote temperature (byte stayed at 19 while app showed 17°C).
+- Byte 48: shows value 2 when mode=2 (HIGH), value 1 when mode=0 or 1
+  (LOW or MEDIUM). Purpose unknown.
 - Byte 60: changes with every 0x18 transition, wide range of values.
-  Possibly humidity from the currently selected sensor.
+  Purpose unknown.
 
 **Special Modes:**
 - Night Ventilation packet mapping and encoding
@@ -660,7 +642,7 @@ See [implementation-status.md](implementation-status.md) for feature implementat
 **Status/Sensors:**
 - Bypass state encoding (weather dependent)
 - PROBE_SENSORS bytes 4, 15, 20, 25, 30 — non-zero but purpose unknown
-- Device State byte 57 — varies with sensor (11, 25, 28 observed)
+- Device State byte 57 — varies (11, 25, 28 observed)
 - Device State byte 60 — values 100-210 observed, possibly humidity-related
 
 **Responses:**

@@ -54,7 +54,7 @@ from visionair_ble.protocol import (
     AirflowLevel,
     PacketType,
     build_schedule_toggle,
-    build_sensor_select_request,
+    build_mode_select_request,
     build_status_request,
     build_sensor_request,
     parse_status,
@@ -146,7 +146,7 @@ async def ble_set_mode(mode: AirflowLevel, mode_name: str) -> dict:
     print(f"\n  [{ts()}] BLE: Setting {mode_name}...")
     async with quick_connect() as client:
         sc, cc = find_chars(client)
-        packet = build_sensor_select_request(mode)
+        packet = build_mode_select_request(mode)
         ds = await send_and_capture(client, cc, sc, packet, PacketType.DEVICE_STATE)
         entry = {"timestamp": ts(), "action": f"set_{mode_name}"}
         if ds:
