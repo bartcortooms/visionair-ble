@@ -122,9 +122,13 @@ a5b6 10 06 05 06 00 00 00 00 15
 > request heavily for polling. It's more efficient than separate DEVICE_STATE and
 > PROBE_SENSORS requests since it gets all data in one request sequence.
 
-**VMI+ app polling pattern:**
+**VMI+ app polling pattern (observed):**
 - **Home screen:** DEVICE_STATE_Q + FULL_DATA_Q every ~10 seconds
 - **Measurements screen:** PROBE_SENSORS_Q + FULL_DATA_Q every ~10 seconds
+
+It's unclear why the app sends both an individual query and FULL_DATA_Q, since
+FULL_DATA_Q alone returns all three packet types. The extra query may be
+redundant. For our purposes, a single FULL_DATA_Q is sufficient.
 
 ### 4.2 Device State (type 0x01)
 
