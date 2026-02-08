@@ -74,3 +74,17 @@ When naming protocol elements:
 - Use names that describe actual content/behavior
 - Update names when we learn more about what something actually does
 - Do not attribute names to "the vendor" - we created all the names
+
+### Schedule interference
+
+The device has an internal 24-hour schedule (written via 0x40 packets) that it
+enforces autonomously. If a manual mode change conflicts with the active
+schedule slot, the device may revert to the scheduled mode within seconds —
+without any phone command. This can silently confuse test results: you send a
+mode change, the device confirms it, and then 30 seconds later the device
+reports a different mode.
+
+**Always account for the schedule when testing mode changes.** Either disable
+the schedule first (`build_schedule_toggle(False)`), or ensure your test mode
+matches the current schedule slot. Otherwise you may attribute device-initiated
+mode changes to phone commands or "sensor polling."

@@ -29,6 +29,7 @@ from .protocol import (
     PacketType,
     ScheduleConfig,
     SensorData,
+    build_sensor_select_request,
     build_boost_command,
     build_full_data_request,
     build_holiday_command,
@@ -37,7 +38,6 @@ from .protocol import (
     build_schedule_toggle,
     build_schedule_write,
     build_sensor_request,
-    build_sensor_select_request,
     build_settings_packet,
     build_status_request,
     parse_schedule_config,
@@ -188,19 +188,13 @@ class VisionAirClient:
     async def get_fresh_status(
         self,
         timeout: float = 5.0,
-        retries: int = 2,
-        delay: float = 0.5,
     ) -> DeviceStatus:
         """Get device status with fresh sensor readings.
 
-        This method requests probe sensor data and switches to the remote
-        sensor to collect fresh temperature and humidity values. The regular
-        get_status() method returns only the currently-selected sensor's
-        temperature.
-
-        The handler collects ALL notifications without filtering by type,
-        since the device has limited notification throughput through ESPHome
-        proxies and we can't afford to miss any.
+        Requests both PROBE_SENSORS (probe1/probe2 temps, humidity) and
+        DEVICE_STATE (device config, airflow mode, remote humidity).
+        Probe temperatures from PROBE_SENSORS override the less reliable
+        values in DEVICE_STATE.
 
         Humidity sources:
         - Remote humidity: DEVICE_STATE packet byte 4 (always present)
@@ -209,8 +203,6 @@ class VisionAirClient:
 
         Args:
             timeout: How long to wait for each notification in seconds
-            retries: Number of retry attempts for remote temp
-            delay: Delay between retries in seconds
 
         Returns:
             DeviceStatus with fresh temperature and humidity readings
@@ -222,29 +214,25 @@ class VisionAirClient:
         from dataclasses import replace
 
         probe_data: bytes | None = None
-        state_packets: list[bytes] = []
+        status_data: bytes | None = None
         new_packet = asyncio.Event()
 
         def handler(*args: Any) -> None:
-            nonlocal probe_data
+            nonlocal probe_data, status_data
             data = bytes(args[-1])
             if bytes(data[:2]) != MAGIC:
                 return
             if data[2] == PacketType.PROBE_SENSORS:
                 probe_data = data
             elif data[2] == PacketType.DEVICE_STATE:
-                state_packets.append(data)
+                status_data = data
             new_packet.set()
 
         await self._client.start_notify(self._status_char, handler)
         try:
-            # Send three commands in quick succession:
-            # 1. Sensor request → PROBE_SENSORS (probe1/probe2 temps, probe1 humidity)
-            # 2. sensor_select(2) → switch to remote sensor
-            # 3. Status request → DEVICE_STATE (with remote temp when selector=2)
+            # Request probe sensors and device state
             for cmd in [
                 build_sensor_request(),
-                build_sensor_select_request(2),
                 build_status_request(),
             ]:
                 if not self._client.is_connected:
@@ -253,9 +241,7 @@ class VisionAirClient:
                     self._command_char, cmd, response=True
                 )
 
-            # Collect notifications until we have everything or timeout.
-            # We expect up to 3 responses: PROBE_SENSORS, stale DEVICE_STATE
-            # from sensor_select, and fresh DEVICE_STATE from status request.
+            # Collect notifications until we have both responses or timeout
             for _ in range(5):
                 if not self._client.is_connected:
                     break
@@ -263,46 +249,15 @@ class VisionAirClient:
                 try:
                     await asyncio.wait_for(new_packet.wait(), timeout=timeout)
                 except TimeoutError:
-                    break  # No more notifications coming
-                has_remote = any(
-                    len(p) >= 43 and p[34] == 2 for p in state_packets
-                )
-                if probe_data and has_remote:
                     break
-
-            # Retry status requests if we don't have remote temp yet
-            for _ in range(retries):
-                has_remote = any(
-                    len(p) >= 43 and p[34] == 2 for p in state_packets
-                )
-                if has_remote or not self._client.is_connected:
+                if probe_data and status_data:
                     break
-                await asyncio.sleep(delay)
-                new_packet.clear()
-                try:
-                    await self._client.write_gatt_char(
-                        self._command_char, build_status_request(), response=True
-                    )
-                    await asyncio.wait_for(new_packet.wait(), timeout=timeout)
-                except (TimeoutError, Exception):
-                    pass
 
         finally:
             try:
                 await self._client.stop_notify(self._status_char)
             except Exception:
                 pass
-
-        # Find best DEVICE_STATE packet (prefer one with selector=2)
-        status_data: bytes | None = None
-        remote_temp: int | None = None
-        for pkt in state_packets:
-            if len(pkt) >= 43:
-                if status_data is None:
-                    status_data = pkt
-                if pkt[34] == 2:
-                    status_data = pkt
-                    remote_temp = pkt[32]
 
         if not status_data:
             raise TimeoutError("No status response received")
@@ -311,7 +266,7 @@ class VisionAirClient:
         if not status:
             raise ValueError("Invalid status response")
 
-        # Override with probe sensor readings (independent of sensor selection)
+        # Override with probe sensor readings (more reliable than DEVICE_STATE)
         sensors = parse_sensors(probe_data) if probe_data else None
         if sensors:
             if sensors.temp_probe1 is not None:
@@ -321,126 +276,89 @@ class VisionAirClient:
             if sensors.humidity_probe1 is not None:
                 status = replace(status, humidity_probe1=sensors.humidity_probe1)
 
-        if remote_temp is not None:
-            status = replace(status, temp_remote=remote_temp)
-
         self._last_status = status
         return status
 
     async def set_airflow_mode(
         self,
         mode: str,
-        summer_limit_enabled: bool | None = None,
-        preheat_temp: int | None = None,
         timeout: float = 10.0,
     ) -> DeviceStatus:
-        """Set airflow mode and optionally other settings.
+        """Set airflow mode.
 
-        This is the recommended method for controlling airflow, as it works
-        with any installation regardless of configured volume.
-
-        Note: preheat on/off is controlled separately via set_preheat().
-
-        Settings not explicitly provided will be preserved from the device's
-        current state (fetched automatically if needed).
+        Uses REQUEST param 0x18 (sensor select) which also changes the fan
+        speed. This is the mechanism used by the VMI+ phone app.
 
         Args:
             mode: Airflow mode ("low", "medium", or "high")
-            summer_limit_enabled: Enable summer limit (None = keep current)
-            preheat_temp: Preheat temperature in °C (None = keep current)
-            timeout: How long to wait for acknowledgment
+            timeout: How long to wait for response
 
         Returns:
             Updated DeviceStatus after change
 
         Raises:
             ValueError: If mode is invalid
-            TimeoutError: If no acknowledgment received
+            TimeoutError: If no response received
         """
         mode = mode.lower()
         if mode not in ("low", "medium", "high"):
             raise ValueError("Mode must be 'low', 'medium', or 'high'")
 
-        # Map mode to protocol airflow value (these are protocol constants)
         airflow = {"low": AIRFLOW_LOW, "medium": AIRFLOW_MEDIUM, "high": AIRFLOW_HIGH}[mode]
-        return await self.set_airflow(
-            airflow, summer_limit_enabled, preheat_temp, timeout
-        )
+        return await self.set_airflow(airflow, timeout=timeout)
 
     async def set_airflow(
         self,
         airflow: int,
-        summer_limit_enabled: bool | None = None,
-        preheat_temp: int | None = None,
         timeout: float = 10.0,
     ) -> DeviceStatus:
-        """Set airflow level and optionally other settings.
+        """Set airflow level.
 
-        Note: The airflow values (131, 164, 201) are protocol constants that
-        map to LOW, MEDIUM, HIGH modes. The actual m³/h output depends on your
-        installation's configured volume. Consider using set_airflow_mode()
-        instead for clearer code.
-
-        Preheat on/off is controlled separately via set_preheat().
-
-        Settings not explicitly provided will be preserved from the device's
-        current state (fetched automatically if needed).
+        Uses REQUEST param 0x18 (sensor select), which also changes the fan
+        speed. This is the mechanism used by the VMI+ app. The device responds
+        with a DEVICE_STATE packet.
 
         Args:
-            airflow: Protocol airflow value (131=LOW, 164=MEDIUM, 201=HIGH)
-            summer_limit_enabled: Enable summer limit (None = keep current)
-            preheat_temp: Preheat temperature in °C (None = keep current)
-            timeout: How long to wait for acknowledgment
+            airflow: AirflowLevel.LOW (1), MEDIUM (2), or HIGH (3)
+            timeout: How long to wait for response
 
         Returns:
             Updated DeviceStatus after change
 
         Raises:
             ValueError: If airflow value is invalid
-            TimeoutError: If no acknowledgment received
+            TimeoutError: If no response received
         """
-        if airflow not in (AIRFLOW_LOW, AIRFLOW_MEDIUM, AIRFLOW_HIGH):
-            raise ValueError(
-                f"Airflow must be {AIRFLOW_LOW}, {AIRFLOW_MEDIUM}, or {AIRFLOW_HIGH}"
-            )
-
         self._find_characteristics()
 
-        # Get current status to preserve unspecified settings
-        if self._last_status is None:
-            await self.get_status()
+        packet = build_sensor_select_request(airflow)
 
-        current = self._last_status
-        if current is None:
-            summer = summer_limit_enabled if summer_limit_enabled is not None else True
-            temp = preheat_temp if preheat_temp is not None else 16
-        else:
-            summer = (
-                summer_limit_enabled
-                if summer_limit_enabled is not None
-                else current.summer_limit_enabled
-            )
-            temp = preheat_temp if preheat_temp is not None else current.preheat_temp
-
-        packet = build_settings_packet(summer, temp, airflow)
-
-        ack_received = asyncio.Event()
+        status_data: bytes | None = None
+        event = asyncio.Event()
 
         def handler(*args: Any) -> None:
+            nonlocal status_data
             data = args[-1]
-            if bytes(data[:2]) == MAGIC and data[2] == PacketType.SETTINGS_ACK:
-                ack_received.set()
+            if bytes(data[:2]) == MAGIC and data[2] == PacketType.DEVICE_STATE:
+                status_data = bytes(data)
+                event.set()
 
         await self._client.start_notify(self._status_char, handler)
         try:
             await self._client.write_gatt_char(self._command_char, packet, response=True)
-            await asyncio.wait_for(ack_received.wait(), timeout=timeout)
+            await asyncio.wait_for(event.wait(), timeout=timeout)
         finally:
             await self._client.stop_notify(self._status_char)
 
-        # Get updated status
-        await asyncio.sleep(0.5)
-        return await self.get_status()
+        if not status_data:
+            raise TimeoutError("No status response received")
+
+        status = parse_status(status_data)
+        if not status:
+            raise ValueError("Invalid status response")
+
+        self._last_status = status
+        return status
 
     async def set_airflow_low(self) -> DeviceStatus:
         """Set airflow to low level.
@@ -567,7 +485,6 @@ class VisionAirClient:
         """Enable or disable winter preheat.
 
         Uses REQUEST param 0x2F to toggle preheat on/off.
-        To change the preheat temperature, use set_airflow_mode(preheat_temp=...).
 
         Args:
             enabled: Whether to enable preheat
@@ -597,25 +514,46 @@ class VisionAirClient:
         await asyncio.sleep(0.5)
         return await self.get_status()
 
-    async def set_summer_limit(self, enabled: bool) -> DeviceStatus:
+    async def set_summer_limit(self, enabled: bool, timeout: float = 10.0) -> DeviceStatus:
         """Enable or disable summer limit.
 
         Args:
             enabled: Whether to enable summer limit
+            timeout: How long to wait for acknowledgment
 
         Returns:
             Updated DeviceStatus
         """
+        self._find_characteristics()
+
         if self._last_status is None:
             await self.get_status()
 
         current = self._last_status
-        mode = current.airflow_mode if current and current.airflow_mode != "unknown" else "medium"
+        temp = current.preheat_temp if current else 16
+        # Use current airflow level for the SETTINGS packet
+        airflow = AIRFLOW_MEDIUM
+        if current and current.airflow_mode != "unknown":
+            airflow = {"low": AIRFLOW_LOW, "medium": AIRFLOW_MEDIUM, "high": AIRFLOW_HIGH}[current.airflow_mode]
 
-        return await self.set_airflow_mode(
-            mode=mode,
-            summer_limit_enabled=enabled,
-        )
+        packet = build_settings_packet(enabled, temp, airflow)
+
+        ack_received = asyncio.Event()
+
+        def handler(*args: Any) -> None:
+            data = args[-1]
+            if bytes(data[:2]) == MAGIC and data[2] == PacketType.SETTINGS_ACK:
+                ack_received.set()
+
+        await self._client.start_notify(self._status_char, handler)
+        try:
+            await self._client.write_gatt_char(self._command_char, packet, response=True)
+            await asyncio.wait_for(ack_received.wait(), timeout=timeout)
+        finally:
+            await self._client.stop_notify(self._status_char)
+
+        await asyncio.sleep(0.5)
+        return await self.get_status()
 
     async def get_schedule(self, *, timeout: float = 10.0) -> ScheduleConfig:
         """Read the current schedule configuration from the device.

@@ -62,28 +62,28 @@ class TestPacketBuilding:
         assert packet == bytes.fromhex("a5b6100005030000000016")
         assert verify_checksum(packet)
 
-    def test_build_sensor_select_probe2(self):
-        """Test sensor select for Probe 2 (inlet)."""
-        packet = build_sensor_select_request(0)
+    def test_build_sensor_select_low(self):
+        """Test sensor select LOW/Probe2 (REQUEST 0x18 value=0)."""
+        packet = build_sensor_select_request(AirflowLevel.LOW)
         assert packet == bytes.fromhex("a5b610060518000000000b")
         assert verify_checksum(packet)
 
-    def test_build_sensor_select_probe1(self):
-        """Test sensor select for Probe 1 (outlet)."""
-        packet = build_sensor_select_request(1)
+    def test_build_sensor_select_medium(self):
+        """Test airflow mode MEDIUM command (REQUEST 0x18 value=1)."""
+        packet = build_sensor_select_request(AirflowLevel.MEDIUM)
         assert packet == bytes.fromhex("a5b610060518000000010a")
         assert verify_checksum(packet)
 
-    def test_build_sensor_select_remote(self):
-        """Test sensor select for Remote Control."""
-        packet = build_sensor_select_request(2)
+    def test_build_sensor_select_high(self):
+        """Test airflow mode HIGH command (REQUEST 0x18 value=2)."""
+        packet = build_sensor_select_request(AirflowLevel.HIGH)
         assert packet == bytes.fromhex("a5b6100605180000000209")
         assert verify_checksum(packet)
 
     def test_build_sensor_select_invalid(self):
-        """Test sensor select with invalid sensor raises."""
-        with pytest.raises(ValueError, match="sensor must be"):
-            build_sensor_select_request(3)
+        """Test airflow request with invalid mode raises."""
+        with pytest.raises(ValueError, match="Mode must be"):
+            build_sensor_select_request(99)
 
     def test_build_boost_on(self):
         """Test BOOST ON command."""
@@ -173,17 +173,17 @@ class TestStatusParsing:
         packet[2] = 0x01  # type
         packet[4] = 52  # humidity (direct %)
         packet[5:8] = (12345678).to_bytes(4, "little")[:3]  # device ID (partial)
-        packet[8] = 17  # remote temp (cached, may be stale)
+        packet[8] = 17  # unknown constant
         packet[22:24] = (363).to_bytes(2, "little")  # configured volume
         packet[26:28] = (634).to_bytes(2, "little")  # operating days
         packet[28:30] = (331).to_bytes(2, "little")  # filter days
-        packet[32] = 18  # active temp (live value for selected sensor)
-        packet[34] = 2  # sensor selector (remote)
+        packet[32] = 19  # active temp (depends on mode index)
+        packet[34] = 2  # mode index (2 = HIGH)
         packet[35] = 16  # probe 1 temp
         packet[38] = 26  # summer limit temp
         packet[42] = 11  # probe 2 temp
         packet[44] = 0  # boost off
-        packet[47] = 104  # airflow indicator (MEDIUM = 0x68)
+        packet[47] = 38  # airflow indicator (HIGH = 0x26)
         packet[50] = 0x02  # summer limit on
         packet[53] = 0x01  # preheat on
         packet[56] = 16  # preheat temp
@@ -192,13 +192,13 @@ class TestStatusParsing:
 
         assert status is not None
         assert status.configured_volume == 363
-        assert status.airflow_mode == "medium"
+        assert status.airflow_mode == "high"
         assert status.airflow_low == 131  # 363 * 0.36 = 130.68 -> 131
         assert status.airflow_medium == 163  # 363 * 0.45 = 163.35 -> 163
         assert status.airflow_high == 200  # 363 * 0.55 = 199.65 -> 200
-        assert status.airflow == 163  # MEDIUM = airflow_medium
-        assert status.temp_remote == 18
-        # Probe temps are None when sensor_selector != their sensor
+        assert status.airflow == 200  # HIGH = airflow_high
+        assert status.temp_remote == 19
+        # Probe temps are None when sensor_selector != their index
         assert status.temp_probe1 is None
         assert status.temp_probe2 is None
         assert status.humidity_remote == 52
@@ -212,29 +212,33 @@ class TestStatusParsing:
         assert status.sensor_name == "Remote Control"
 
     def test_parse_status_airflow_modes(self):
-        """Test parsing airflow modes from indicator bytes."""
+        """Test parsing airflow modes from indicator bytes.
+
+        Indicator values verified via capture (airflow_indicator_byte47_20260207):
+        0x68 (104) = LOW, 0xc2 (194) = MEDIUM, 0x26 (38) = HIGH
+        """
         base_packet = bytearray(70)
         base_packet[0:2] = b"\xa5\xb6"
         base_packet[2] = 0x01
         base_packet[22:24] = (400).to_bytes(2, "little")  # 400 m³ volume
 
-        # LOW mode (indicator 38 = 0x26)
+        # LOW mode (indicator 0x68 = 104)
         packet = base_packet.copy()
-        packet[47] = 38
+        packet[47] = 104
         status = parse_status(bytes(packet))
         assert status.airflow_mode == "low"
         assert status.airflow == status.airflow_low
 
-        # MEDIUM mode (indicator 104 = 0x68)
+        # MEDIUM mode (indicator 0xc2 = 194)
         packet = base_packet.copy()
-        packet[47] = 104
+        packet[47] = 194
         status = parse_status(bytes(packet))
         assert status.airflow_mode == "medium"
         assert status.airflow == status.airflow_medium
 
-        # HIGH mode (indicator 194 = 0xC2)
+        # HIGH mode (indicator 0x26 = 38)
         packet = base_packet.copy()
-        packet[47] = 194
+        packet[47] = 38
         status = parse_status(bytes(packet))
         assert status.airflow_mode == "high"
         assert status.airflow == status.airflow_high
