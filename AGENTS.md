@@ -23,6 +23,11 @@ VisionAir BLE is a Python library for communicating with Ventilairsec VisionAir 
 - If parent PR merged, rebase child branches onto `origin/main` before requesting review.
 - If diff is stale/already merged, close as superseded instead of requesting review.
 
+### CLI Tooling Rules
+
+- **gh CLI:** Prefer running `gh` commands from the workspace root with explicit `--repo owner/name` arguments rather than `cd`ing into subdirectories. This improves robustness against directory changes.
+- **Paths:** Use workspace-relative paths where possible.
+
 ## Key Files
 
 - `src/visionair_ble/protocol.py` - Protocol definitions and packet parsing
