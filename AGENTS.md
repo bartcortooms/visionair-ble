@@ -12,6 +12,17 @@ VisionAir BLE is a Python library for communicating with Ventilairsec VisionAir 
 - If private details were posted accidentally, **delete and repost redacted** (editing may preserve history).
 - For GitHub issue/PR comments and PR bodies, use `gh ... --body-file` with a heredoc (`<<'EOF'`) instead of inline `--body "..."` strings, so markdown/newlines render correctly and content is not mangled by shell interpolation.
 
+### PR stacking workflow (required)
+
+- Default to independent branches from latest `main`.
+- If stacking is needed, clearly state dependency in PR body (e.g., `stack 2/3`, depends on #NN).
+- Before opening/updating a PR, run:
+  - `git fetch origin`
+  - `git log --oneline origin/main..HEAD`
+  - `git diff --name-status origin/main...HEAD`
+- If parent PR merged, rebase child branches onto `origin/main` before requesting review.
+- If diff is stale/already merged, close as superseded instead of requesting review.
+
 ## Key Files
 
 - `src/visionair_ble/protocol.py` - Protocol definitions and packet parsing
