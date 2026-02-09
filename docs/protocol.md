@@ -407,9 +407,7 @@ allowing manual mode changes via 0x18 to persist indefinitely.
 ### 7.1 Settings & Clock Sync (type 0x1a)
 
 The phone app sends SETTINGS packets every ~10 seconds as a clock sync.
-In all controlled captures (18 packets across Feb 7 and Feb 9 2026),
-bytes 7-10 carry the current time — never airflow configuration or
-summer limit settings.
+Bytes 7-10 carry the current time (day, hour, minute, second).
 
 Structure: `a5b6 1a 06 06 1a 02 <day> <hour> <minute> <second> <checksum>`
 
@@ -425,70 +423,39 @@ Structure: `a5b6 1a 06 06 1a 02 <day> <hour> <minute> <second> <checksum>`
 | 10 | 1 | Second (0-59) |
 | 11 | 1 | XOR checksum |
 
-**Evidence from capture `fan_speed_capture_20260207_171617` (5 packets):**
+**Example decoded packets:**
 
-| Byte 7 | Byte 8 | Byte 9 | Byte 10 | Interpreted time |
+| Byte 7 | Byte 8 | Byte 9 | Byte 10 | Decoded time |
 |--------|--------|--------|---------|-----------------|
 | 0x07 | 0x10 (16) | 0x04 (4) | 0x0f (15) | Feb 7, 16:04:15 |
-| 0x07 | 0x10 (16) | 0x0b (11) | 0x0a (10) | Feb 7, 16:11:10 |
-| 0x07 | 0x10 (16) | 0x24 (36) | 0x05 (5) | Feb 7, 16:36:05 |
-| 0x07 | 0x11 (17) | 0x04 (4) | 0x23 (35) | Feb 7, 17:04:35 |
 | 0x07 | 0x11 (17) | 0x11 (17) | 0x17 (17) | Feb 7, 17:17:17 |
-
-**Evidence from capture `issue19_humidity_validation_run_20260209` (13 packets):**
-
-| Byte 7 | Byte 8 | Byte 9 | Byte 10 | Interpreted time |
-|--------|--------|--------|---------|-----------------|
-| 0x08 | 0x0c (12) | 0x08 (8) | 0x0d (13) | Feb 8, 12:08:13 |
-| 0x08 | 0x0c (12) | 0x0c (12) | 0x15 (21) | Feb 8, 12:12:21 |
-| 0x08 | 0x0d (13) | 0x35 (53) | 0x31 (49) | Feb 8, 13:53:49 |
 | 0x08 | 0x0e (14) | 0x07 (7) | 0x30 (48) | Feb 8, 14:07:48 |
-| 0x08 | 0x0e (14) | 0x0c (12) | 0x03 (3) | Feb 8, 14:12:03 |
-| 0x08 | 0x0e (14) | 0x27 (39) | 0x36 (54) | Feb 8, 14:39:54 |
-| 0x08 | 0x0e (14) | 0x2c (44) | 0x19 (25) | Feb 8, 14:44:25 |
-| 0x08 | 0x10 (16) | 0x38 (56) | 0x31 (49) | Feb 8, 16:56:49 |
-| 0x08 | 0x11 (17) | 0x06 (6) | 0x14 (20) | Feb 8, 17:06:20 |
 | 0x09 | 0x09 (9) | 0x29 (41) | 0x20 (32) | Feb 9, 09:41:32 |
-| 0x09 | 0x10 (16) | 0x05 (5) | 0x13 (19) | Feb 9, 16:05:19 |
-| 0x09 | 0x10 (16) | 0x07 (7) | 0x17 (23) | Feb 9, 16:07:23 |
 
-Note: only 12 rows shown; the 13th packet had byte 7 = 0x08 (see full
-decode in `data/captures/issue19_humidity_validation_run_20260209/extract.txt`).
+Hours increase monotonically within each day; minutes and seconds stay in
+the 0-59 range. Byte 7 tracks the day-of-month.
 
-Key observations:
-- Hours increase monotonically within each day
-- Minutes and seconds are valid (0-59)
-- Byte 7 changes from 0x08 to 0x09 between Feb 8 and Feb 9 (day-of-month)
-- None of the byte 9-10 pairs match the known "airflow bytes" (0x19/0x0a,
-  0x28/0x15, 0x07/0x30) — packet #4 has (0x07, 0x30) but this is minute=7,
-  second=48, coincidental
+**`AIRFLOW_BYTES` in the codebase:**
 
-**Relationship to the "AIRFLOW_BYTES" in the codebase:**
+The library's `AIRFLOW_BYTES` constant contains three byte pairs used by
+`build_settings_packet()`:
+- LOW: `(0x19, 0x0A)` — also valid as minute=25, second=10
+- MEDIUM: `(0x28, 0x15)` — also valid as minute=40, second=21
+- HIGH: `(0x07, 0x30)` — also valid as minute=7, second=48
 
-The library's `AIRFLOW_BYTES` constant contains three byte pairs that were
-extracted from early uncontrolled captures:
-- LOW: `(0x19, 0x0A)` — plausible as minute=25, second=10
-- MEDIUM: `(0x28, 0x15)` — plausible as minute=40, second=21
-- HIGH: `(0x07, 0x30)` — plausible as minute=7, second=48
+These byte pairs are plausible clock sync timestamps and have not been
+confirmed as airflow configuration. The phone controls airflow mode via
+REQUEST param 0x18, not via SETTINGS.
 
-These were assumed to be airflow configuration values that the phone sends
-alongside mode changes. In reality, the phone changes airflow mode via
-REQUEST param 0x18 (verified Feb 7-8), not via SETTINGS. The byte pairs
-were likely coincidental clock sync values from timestamps near the time
-of each mode change in early captures. No controlled capture has reproduced
-SETTINGS packets with these specific byte pairs.
+**Byte 7 observed values:**
 
-**Byte 7 values across captures:**
+| Value range | Interpretation |
+|-------------|----------------|
+| 0x00, 0x02 | Unknown — may be low day-of-month values or a config sub-command |
+| 0x06-0x09 | Day-of-month (confirmed by correlation with calendar dates) |
 
-| Capture | Byte 7 values | Interpretation |
-|---------|--------------|----------------|
-| Early (uncontrolled) | 0x00, 0x02 | Unknown — may be day=0 (unset RTC?) or day=2 |
-| Feb 7 2026 | 0x06, 0x07 | Day 6 and day 7 (capture spanned midnight) |
-| Feb 9 2026 | 0x08, 0x09 | Day 8 and day 9 (btsnoop spans multiple connections) |
-
-The early-capture values 0x00 and 0x02 remain unexplained — they could be
-low day values, or the device firmware could support a config-mode SETTINGS
-sub-command distinguished by byte 7 value. This has not been verified.
+Whether the device firmware supports a config-mode SETTINGS variant
+(distinguished by low byte 7 values) is unverified.
 
 ### 7.2 Special Modes
 
@@ -679,18 +646,16 @@ Value `0x0F` (all bits set) indicates all components healthy.
 
 ### Open Questions
 
-**SETTINGS packet (0x1a) — resolved (#21):**
-- Bytes 7-10 carry clock sync (day, hour, minute, second). Confirmed across
-  18 packets in two independent captures (Feb 7 and Feb 9 2026). See §7.1.
-- The "airflow bytes" (0x19/0x0a, 0x28/0x15, 0x07/0x30) from early captures
-  are clock sync minute:second values, not airflow configuration. The phone
-  changes airflow via REQUEST param 0x18, not SETTINGS.
-- The library's `build_settings_packet()` sends byte 7 = 0x00/0x02 (which
-  the phone never does in controlled captures). Whether the device firmware
-  interprets low byte-7 values as config mode is unverified. The function
-  is retained because `set_summer_limit()` gets a SETTINGS_ACK response,
-  but a dedicated capture of the phone's summer limit toggle would be needed
-  to understand the correct protocol.
+**SETTINGS packet (0x1a):**
+- Bytes 7-10 carry clock sync (day, hour, minute, second). See §7.1.
+- The phone controls airflow via REQUEST param 0x18, not SETTINGS.
+- `AIRFLOW_BYTES` values are plausible clock sync timestamps, not confirmed
+  airflow configuration.
+- `build_settings_packet()` sends byte 7 = 0x00/0x02, which the phone does
+  not use. Whether the device firmware interprets low byte-7 values as a
+  config sub-command is unverified. The function is retained because
+  `set_summer_limit()` gets a SETTINGS_ACK response. A capture of the
+  phone's summer limit toggle would clarify the correct protocol.
 
 **Unknown REQUEST params:**
 - Param 0x29: the phone sends this heavily after connecting (~65 times with

@@ -840,12 +840,8 @@ class TestParseScheduleData:
 class TestSettingsClockSync:
     """Tests validating that SETTINGS bytes 7-10 are clock sync data.
 
-    All SETTINGS packets from controlled captures (Feb 7 and Feb 9 2026) carry
-    (day, hour, minute, second) in bytes 7-10. The phone sends these every ~10s
-    during its polling loop. None match the "airflow bytes" pattern that was
-    assumed in early uncontrolled captures.
-
-    See issue #21 and protocol.md section 7.1 for the full analysis.
+    SETTINGS bytes 7-10 carry (day, hour, minute, second). The phone sends
+    these every ~10s during its polling loop. See protocol.md section 7.1.
     """
 
     # Captured SETTINGS packets from issue19_humidity_validation_run_20260209.
@@ -929,14 +925,13 @@ class TestSettingsClockSync:
             assert days[i] >= days[i - 1]
 
     def test_feb9_airflow_byte_match_is_coincidental(self):
-        """A known airflow pair appears in clock sync, proving coincidence.
+        """An AIRFLOW_BYTES[HIGH] pair appears in a clock sync packet.
 
-        Packet #4 (a5b61a06061a02080e073033) has bytes 9-10 = (0x07, 0x30)
-        which matches AIRFLOW_BYTES[HIGH]. But this packet is clearly clock
-        sync: byte 7 = 0x08 (Feb 8), byte 8 = 0x0e (14:00), so bytes 9-10
-        are minute=7, second=48. The match is coincidental — the same byte
-        pair appears in a clock sync context, proving that the old "airflow
-        byte pairs" are plausible as timestamp values.
+        Packet a5b61a06061a02080e073033 has bytes 9-10 = (0x07, 0x30),
+        matching AIRFLOW_BYTES[HIGH]. The full context is clock sync:
+        byte 7 = 0x08 (day 8), byte 8 = 0x0e (hour 14), bytes 9-10 =
+        minute 7, second 48. This shows AIRFLOW_BYTES values are valid
+        timestamp values.
         """
         from visionair_ble.protocol import AIRFLOW_BYTES
 
@@ -950,11 +945,10 @@ class TestSettingsClockSync:
         assert pkt4[10] == 48 # second (0x30 = 48)
 
     def test_feb9_byte8_not_valid_preheat_temp_for_all(self):
-        """Byte 8 cannot be preheat temp — some values fall outside 12-18°C.
+        """Byte 8 is not preheat temp — values fall outside the 12-18°C range.
 
-        Under the old config interpretation, byte 8 was 'preheat temperature'.
-        Several captured packets have byte 8 values outside the valid preheat
-        range (12-18°C), proving it's not preheat temp — it's the hour.
+        Preheat temperature is 12-18°C. Several captured packets have byte 8
+        values outside this range, confirming byte 8 is the hour field.
         """
         out_of_preheat_range = 0
         for hex_pkt, _, hour, _, _ in self.FEB9_CAPTURE_PACKETS:
