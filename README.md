@@ -182,3 +182,6 @@ The device uses a **Cypress PSoC 4 BLE** chip. The GATT service UUIDs and charac
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
+
+
+> Test PR note: created by Clawbot to validate the PR workflow.
