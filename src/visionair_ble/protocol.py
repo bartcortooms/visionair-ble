@@ -175,6 +175,7 @@ class RequestParam:
     BOOST = 0x19                # Toggle boost (value: 0=OFF, 1=ON)
     HOLIDAY = 0x1A              # Set holiday days (byte 9 = days, 0=OFF)
     SCHEDULE_TOGGLE = 0x1D      # Toggle time slots (value: 0=OFF, 1=ON)
+    PREHEAT_TEMP = 0x1C         # Set preheat temperature (value: degrees C, e.g. 16)
     PREHEAT = 0x2F              # Toggle preheat (value: 0=OFF, 1=ON)
 
 
@@ -651,6 +652,26 @@ def build_preheat_request(enable: bool) -> bytes:
         Complete packet bytes
     """
     return build_request(RequestParam.PREHEAT, value=1 if enable else 0, extended=True)
+
+
+def build_preheat_temp_request(temperature: int) -> bytes:
+    """Build a preheat temperature command packet.
+
+    Sets the preheat target temperature. The VMI+ app offers Mini (0),
+    12-18°C. Uses REQUEST param 0x1C with the temperature as the value byte.
+
+    Args:
+        temperature: Target temperature in °C (12-18)
+
+    Returns:
+        Complete packet bytes
+
+    Raises:
+        ValueError: If temperature is outside 12-18 range
+    """
+    if not 12 <= temperature <= 18:
+        raise ValueError(f"Preheat temperature must be between 12 and 18°C, got {temperature}")
+    return build_request(RequestParam.PREHEAT_TEMP, value=temperature, extended=True)
 
 
 # =============================================================================

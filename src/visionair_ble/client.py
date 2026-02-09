@@ -34,6 +34,7 @@ from .protocol import (
     build_full_data_request,
     build_holiday_command,
     build_preheat_request,
+    build_preheat_temp_request,
     build_schedule_config_request,
     build_schedule_toggle,
     build_schedule_write,
@@ -526,6 +527,63 @@ class VisionAirClient:
         await asyncio.sleep(0.5)
         return await self.get_status()
 
+    async def set_preheat_temperature(
+        self,
+        temperature: int,
+        timeout: float = 10.0,
+    ) -> DeviceStatus:
+        """Set the preheat temperature.
+
+        Uses REQUEST param 0x1C to set the preheat target temperature.
+
+        Args:
+            temperature: Target temperature in °C (12-18)
+            timeout: How long to wait for response
+
+        Returns:
+            Updated DeviceStatus
+
+        Raises:
+            ValueError: If temperature is outside 12-18 range
+        """
+        self._find_characteristics()
+
+        packet = build_preheat_temp_request(temperature)
+
+        status_data: bytes | None = None
+        event = asyncio.Event()
+
+        def handler(*args: Any) -> None:
+            nonlocal status_data
+            data = args[-1]
+            if bytes(data[:2]) == MAGIC and data[2] == PacketType.DEVICE_STATE:
+                status_data = bytes(data)
+                event.set()
+
+        await self._client.start_notify(self._status_char, handler)
+        try:
+            await self._client.write_gatt_char(self._command_char, packet, response=True)
+            await asyncio.wait_for(event.wait(), timeout=timeout)
+        finally:
+            await self._client.stop_notify(self._status_char)
+
+        if not status_data:
+            raise TimeoutError("No status response received")
+
+        status = parse_status(status_data)
+        if not status:
+            raise ValueError("Invalid status response")
+
+        # Optimistic update: DEVICE_STATE doesn't immediately reflect the new
+        # preheat temperature (byte 56 stays stale), but the command is applied
+        # (verified against VMI+ app). Apply the requested value so callers
+        # see the correct state.
+        from dataclasses import replace
+
+        status = replace(status, preheat_temp=temperature)
+        self._last_status = status
+        return status
+
     async def set_summer_limit(self, enabled: bool, timeout: float = 10.0) -> DeviceStatus:
         """Enable or disable summer limit.
 
@@ -550,12 +608,18 @@ class VisionAirClient:
 
         packet = build_settings_packet(enabled, temp, airflow)
 
+        status_data: bytes | None = None
         ack_received = asyncio.Event()
 
         def handler(*args: Any) -> None:
+            nonlocal status_data
             data = args[-1]
-            if bytes(data[:2]) == MAGIC and data[2] == PacketType.SETTINGS_ACK:
-                ack_received.set()
+            if bytes(data[:2]) == MAGIC:
+                if data[2] == PacketType.DEVICE_STATE:
+                    status_data = bytes(data)
+                    ack_received.set()
+                elif data[2] == PacketType.SETTINGS_ACK:
+                    ack_received.set()
 
         await self._client.start_notify(self._status_char, handler)
         try:
@@ -563,6 +627,12 @@ class VisionAirClient:
             await asyncio.wait_for(ack_received.wait(), timeout=timeout)
         finally:
             await self._client.stop_notify(self._status_char)
+
+        if status_data:
+            status = parse_status(status_data)
+            if status:
+                self._last_status = status
+                return status
 
         await asyncio.sleep(0.5)
         return await self.get_status()

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import tempfile
+import time
+
 from .ui_core import Node
 
 
@@ -146,6 +149,94 @@ class VMIUIActionsMixin:
         from_x = x_left + int(span * (from_pct / 100.0))
         to_x = x_left + int(span * (to_pct / 100.0))
         self.swipe(from_x, y, to_x, y, duration_ms=450)
+
+    def preheat_temp(self, temperature: str) -> str:
+        """Set the preheat temperature on the Simplified Configuration screen.
+
+        Args:
+            temperature: Target temperature as string -- an integer 12-18 or
+                "mini".
+
+        Returns:
+            Path to the confirmation screenshot.
+        """
+        # Validate argument.
+        if temperature.lower() == "mini":
+            target_desc = "Mini"
+        else:
+            try:
+                temp_int = int(temperature)
+            except ValueError:
+                raise RuntimeError(
+                    f"preheat-temp requires an integer 12-18 or 'mini', got: {temperature}"
+                )
+            if temp_int < 12 or temp_int > 18:
+                raise RuntimeError(
+                    f"preheat-temp value must be 12-18 or 'mini', got: {temp_int}"
+                )
+            target_desc = f"{temp_int} °C"
+
+        # Navigate to the Simplified Configuration screen.
+        self.nav("simplified")
+
+        # Take a screenshot and find the preheat temperature badge by scanning
+        # for purple pixels in the expected region.
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+            tmp_path = tmp.name
+        self.screenshot(tmp_path)
+
+        try:
+            from PIL import Image  # noqa: PLC0415
+        except ImportError:
+            raise RuntimeError(
+                "Pillow is required for preheat-temp (pip install Pillow)"
+            )
+
+        img = Image.open(tmp_path)
+        pixels = img.load()
+
+        # Scan for purple pixels (R>60, R<120, G<50, B>100) in the badge area.
+        purple_xs: list[int] = []
+        purple_ys: list[int] = []
+        for y in range(1380, min(1440, img.height)):
+            for x in range(200, min(400, img.width)):
+                r, g, b = pixels[x, y][:3]
+                if r > 60 and r < 120 and g < 50 and b > 100:
+                    purple_xs.append(x)
+                    purple_ys.append(y)
+
+        if not purple_xs:
+            raise RuntimeError(
+                "preheat temperature badge not found -- expected purple pixels "
+                "in y=1380-1440, x=200-400 on the Simplified Configuration screen"
+            )
+
+        # Tap the center of the purple badge to open the dropdown.
+        badge_x = (min(purple_xs) + max(purple_xs)) // 2
+        badge_y = (min(purple_ys) + max(purple_ys)) // 2
+        self.tap(badge_x, badge_y, delay=1.0)
+
+        # Dump UI to find the target temperature button.
+        xml = self.ui_dump()
+        target_node: Node | None = None
+        for node in self.nodes(xml):
+            if node.desc.strip() == target_desc:
+                target_node = node
+                break
+
+        if target_node is None:
+            raise RuntimeError(
+                f"dropdown option '{target_desc}' not found in UI dump"
+            )
+
+        # Tap the target temperature button.
+        x, y = target_node.center
+        self.tap(x, y, delay=2.0)
+
+        # Take a confirmation screenshot.
+        confirm_path = tmp_path
+        self.screenshot(confirm_path)
+        return confirm_path
 
     def schedule_tab(self, tab: str) -> None:
         self.nav("time-slots")

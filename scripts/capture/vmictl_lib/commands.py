@@ -188,6 +188,13 @@ def _cmd_preheat_toggle(ctl: VMICtl, args: list[str]) -> int:
     return 0
 
 
+def _cmd_preheat_temp(ctl: VMICtl, args: list[str]) -> int:
+    _require_args(args, 1, "preheat-temp requires a temperature value (12-18 or 'mini')")
+    shot = ctl.ui.preheat_temp(args[0])
+    print(f"Screenshot saved to {shot}")
+    return 0
+
+
 def _cmd_session_checkpoint(ctl: VMICtl, args: list[str]) -> int:
     _require_args(args, 1, "session-checkpoint requires <session_dir> [note]")
     note = " ".join(args[1:]) if len(args) > 1 else None
@@ -250,6 +257,7 @@ def get_command_specs() -> dict[str, CommandSpec]:
         CommandSpec("fan-max", "Tap fan high tile", _cmd_fan(2), modifies_vmi=True),
         CommandSpec("boost", "Tap boost tile", _cmd_fan(3), modifies_vmi=True),
         CommandSpec("preheat-toggle", "Toggle preheat on/off", _cmd_preheat_toggle, modifies_vmi=True),
+        CommandSpec("preheat-temp", "Set preheat temperature (12-18 or mini)", _cmd_preheat_temp, modifies_vmi=True),
         CommandSpec("airflow-min", "Set simplified airflow to minimum", _cmd_airflow_min, modifies_vmi=True),
         CommandSpec("airflow-max", "Set simplified airflow to maximum", _cmd_airflow_max, modifies_vmi=True),
         CommandSpec("airflow", "Drag simplified airflow slider", _cmd_airflow, modifies_vmi=True),

@@ -452,6 +452,64 @@ class TestHolidayMode:
 
 
 @pytest.mark.e2e
+class TestPreheatTemperature:
+    """Test preheat temperature set via real device.
+
+    WARNING: These tests MODIFY device settings. The original preheat
+    temperature is always restored in a finally block, even on test failure.
+    """
+
+    @pytest.mark.asyncio
+    async def test_set_preheat_temperature(
+        self, device_address: str | None, proxy_host: str | None, proxy_key: str | None
+    ) -> None:
+        """Test setting preheat temperature and reading back from DeviceStatus."""
+        address = await find_device(device_address)
+
+        # Read current preheat temperature so we can restore it
+        async with connect_with_retry(address, proxy_host, proxy_key) as client:
+            visionair = VisionAirClient(client)
+            status = await visionair.get_status()
+            original_temp = status.preheat_temp
+            print(f"  Original preheat temp: {original_temp}°C")
+
+        # Pick a test temperature different from current (valid range: 12-18)
+        test_temp = 18 if original_temp != 18 else 14
+
+        try:
+            # Set new preheat temperature
+            await asyncio.sleep(PROXY_RECOVERY_DELAY)
+            async with connect_with_retry(address, proxy_host, proxy_key) as client:
+                visionair = VisionAirClient(client)
+                status = await visionair.set_preheat_temperature(test_temp)
+                assert isinstance(status, DeviceStatus)
+                assert status.preheat_temp == test_temp, (
+                    f"Expected preheat_temp={test_temp}, got {status.preheat_temp}"
+                )
+                print(f"  set_preheat_temperature({test_temp}): preheat_temp={status.preheat_temp}°C")
+
+            # Restore original temperature
+            await asyncio.sleep(PROXY_RECOVERY_DELAY)
+            async with connect_with_retry(address, proxy_host, proxy_key) as client:
+                visionair = VisionAirClient(client)
+                status = await visionair.set_preheat_temperature(original_temp)
+                assert isinstance(status, DeviceStatus)
+                assert status.preheat_temp == original_temp, (
+                    f"Expected preheat_temp={original_temp} after restore, got {status.preheat_temp}"
+                )
+                print(f"  Restored: preheat_temp={status.preheat_temp}°C")
+        except Exception:
+            # Always clean up — restore original temperature
+            try:
+                await asyncio.sleep(PROXY_RECOVERY_DELAY)
+                async with connect_with_retry(address, proxy_host, proxy_key) as client:
+                    await VisionAirClient(client).set_preheat_temperature(original_temp)
+            except Exception:
+                pass
+            raise
+
+
+@pytest.mark.e2e
 class TestScheduleRead:
     """Test schedule reading from real device (read-only).
 

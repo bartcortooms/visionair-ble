@@ -18,6 +18,7 @@ from visionair_ble.protocol import (
     build_fixed_airflow_activate,
     build_holiday_command,
     build_preheat_request,
+    build_preheat_temp_request,
     build_unknown_2c_query,
     build_night_ventilation_activate,
     build_schedule_config_request,
@@ -343,46 +344,37 @@ class TestHolidayMode:
 
 
 class TestSetPreheatTemperature:
-    """Tests for preheat temperature settings packet."""
+    """Tests for preheat temperature REQUEST packet (param 0x1C)."""
 
-    def test_valid_temperature_builds_settings_packet(self):
-        """Test that a valid preheat temperature builds the correct SETTINGS packet."""
-        packet = build_settings_packet(
-            summer_limit_enabled=False, preheat_temp=18, airflow=AIRFLOW_MEDIUM
-        )
-        assert packet == bytes.fromhex("a5b61a06061a02001228152d")
+    def test_build_preheat_temp_18(self):
+        """Test that preheat temp 18°C matches captured phone app packet."""
+        packet = build_preheat_temp_request(18)
+        assert packet == bytes.fromhex("a5b61006051c000000121d")
         assert verify_checksum(packet)
 
-    def test_temperature_too_low_in_client(self):
-        """Test that temperature below 14 raises ValueError in client validation."""
-        # The client.set_preheat_temperature() validates 14-22 range.
-        # build_settings_packet itself doesn't validate, so we test the range
-        # check that the client would perform.
-        # Temperature 13 should be rejected by the client.
-        # Here we verify build_settings_packet still produces valid packets
-        # (the range check is in the client layer).
-        packet = build_settings_packet(
-            summer_limit_enabled=False, preheat_temp=13, airflow=AIRFLOW_MEDIUM
-        )
+    def test_build_preheat_temp_16(self):
+        """Test that preheat temp 16°C matches captured phone app packet."""
+        packet = build_preheat_temp_request(16)
+        assert packet == bytes.fromhex("a5b61006051c000000101f")
         assert verify_checksum(packet)
 
-    def test_preserves_summer_limit_enabled(self):
-        """Test that summer_limit_enabled=True is encoded in the packet."""
-        packet = build_settings_packet(
-            summer_limit_enabled=True, preheat_temp=20, airflow=AIRFLOW_MEDIUM
-        )
-        assert verify_checksum(packet)
-        # Byte after magic: [0x1a, 0x06, 0x06, 0x1a, 0x02, summer_limit, temp, ...]
-        # summer_limit is at offset 7 (index 7 from start including magic)
-        assert packet[7] == 0x02  # summer_limit_enabled=True → 0x02
+    def test_temperature_too_low(self):
+        """Test that temperature below 12 raises ValueError."""
+        with pytest.raises(ValueError, match="between 12 and 18"):
+            build_preheat_temp_request(11)
 
-    def test_different_airflow_levels(self):
-        """Test settings packet with different airflow levels."""
-        for airflow in [AIRFLOW_LOW, AIRFLOW_MEDIUM, AIRFLOW_HIGH]:
-            packet = build_settings_packet(
-                summer_limit_enabled=False, preheat_temp=16, airflow=airflow
-            )
+    def test_temperature_too_high(self):
+        """Test that temperature above 18 raises ValueError."""
+        with pytest.raises(ValueError, match="between 12 and 18"):
+            build_preheat_temp_request(19)
+
+    def test_all_valid_temperatures(self):
+        """Test all valid temperatures produce valid packets."""
+        for temp in range(12, 19):
+            packet = build_preheat_temp_request(temp)
             assert verify_checksum(packet)
+            # Value byte is at offset 9 (magic[2] + payload[7])
+            assert packet[9] == temp
 
 
 class TestSpecialModes:
