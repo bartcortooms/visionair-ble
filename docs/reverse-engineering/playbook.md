@@ -117,6 +117,8 @@ python scripts/capture/btsnooz.py /tmp/btsnooz_hci.log /tmp/btsnoop.log
 
 **Wrong UI target selection** — Dump UI tree and update selectors in `ui_selectors.toml`.
 
+**`session-end`/bugreport intermittently fails on ADB-over-WiFi** — Retry once after `adb connect <target>`. `vmictl session-end` now does this automatically.
+
 ---
 
 ## 2. Capture Methodology
@@ -254,6 +256,12 @@ python scripts/capture/extract_packets.py "$SESSION/btsnoop.log" --checkpoints "
 Packet mapping unknown. These modes have UI toggles in Configuration → Special Modes but we haven't captured their protocol encoding. May use `REQUEST` (0x10) or `SETTINGS` (0x1a) path.
 
 **Runbook (issue #6):**
+
+Current opcode candidates from 2026-02-09 captures (not yet proven):
+- `REQUEST param 0x1c` with values `0x0e/0x10/0x12`
+- `REQUEST param 0x17` with values `0x19/0x1a`
+
+Use these as diff targets around ON/OFF checkpoints.
 
 ```bash
 python scripts/capture/preflight_capture.py --issue 6
