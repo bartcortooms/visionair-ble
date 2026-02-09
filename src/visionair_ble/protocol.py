@@ -651,9 +651,7 @@ def build_boost_command(enable: bool) -> bytes:
 def build_preheat_request(enable: bool) -> bytes:
     """Build a preheat toggle command packet.
 
-    Toggles preheat mode on or off. This is a separate command from the
-    SETTINGS packet — the SETTINGS packet controls airflow/temperature,
-    while this REQUEST controls the preheat on/off state.
+    Toggles preheat mode on or off via REQUEST param 0x2F.
 
     Args:
         enable: True to enable preheat, False to disable

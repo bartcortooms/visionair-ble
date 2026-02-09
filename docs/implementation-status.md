@@ -47,7 +47,7 @@ This document tracks which protocol features from [protocol.md](protocol.md) are
 | `ScheduleSlot` dataclass | Yes | Yes | Per-hour schedule slot (preheat temp + mode) |
 | `ScheduleConfig` dataclass | Yes | Yes | 24-hour schedule (list of slots) |
 | Schedule mode byte mapping | Yes | Yes | LOW=0x28, MEDIUM=0x32, HIGH=0x3C |
-| Airflow mode mapping | Yes | Yes | LOW/MEDIUM/HIGH — `AIRFLOW_BYTES` values are unverified (see #21) |
+| `AIRFLOW_BYTES` | Partial | Yes | Config-mode byte pairs keyed by airflow level; unverified — may be clock sync artifacts (see #21) |
 | Volume-based calculation | Yes | Yes | ACH multipliers |
 | Sensor metadata for HA | Yes | Yes | Auto-discovery support |
 

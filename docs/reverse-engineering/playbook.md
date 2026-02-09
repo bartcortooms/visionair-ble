@@ -325,7 +325,7 @@ For reference — these are fully decoded and implemented.
 | Holiday mode | REQUEST param 0x1a, byte 9 = days | Implemented |
 | Equipment life | DEVICE_STATE bytes 26-29 | Implemented |
 | Summer limit threshold | DEVICE_STATE byte 38 | Implemented |
-| Airflow settings | SETTINGS 0x1a, bytes 9-10 | Implemented |
+| Clock sync | SETTINGS 0x1a, bytes 7-10 | Observed (config-mode unverified) |
 | Preheat control | SETTINGS 0x1a, bytes 6+8 | Implemented |
 | Schedule config | 0x40 write / 0x46 response | Experimental |
 
