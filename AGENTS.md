@@ -4,6 +4,13 @@
 
 VisionAir BLE is a Python library for communicating with Ventilairsec VisionAir ventilation devices over Bluetooth Low Energy. The protocol was reverse-engineered from BLE traffic captures.
 
+## Privacy & Public Communication (critical)
+
+- Treat GitHub issues, PRs, and commit messages in public repos as **public**.
+- Never post private/internal identifiers in public text (LAN IPs, private hostnames, ADB targets, tokens, keys, MAC addresses, email/phone, exact home network details).
+- If technical context is needed, redact values (for example: `<private-ip>:<port>`).
+- If private details were posted accidentally, **delete and repost redacted** (editing may preserve history).
+
 ## Key Files
 
 - `src/visionair_ble/protocol.py` - Protocol definitions and packet parsing
