@@ -369,7 +369,8 @@ Each slot is 2 bytes:
 | Mode 3 | 0x3C | 60 | HIGH |
 
 > **Note:** The decimal values follow a regular 40/50/60 pattern, unlike the
-> settings airflow bytes which use unrelated two-byte pairs.
+> `AIRFLOW_BYTES` pairs used by `build_settings_packet()` (two-byte pairs
+> with unverified semantics).
 
 **Example** (hour 0 set to HIGH at 18°C, hours 1-8 LOW, 9-17 MEDIUM, 18-23 LOW):
 ```

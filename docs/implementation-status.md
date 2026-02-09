@@ -66,4 +66,4 @@ Features that need more data before implementing:
 
 - **Diagnostic bitfield (byte 54)** — Only value 0x0F (all healthy) observed. Bit-to-component mapping is assumed based on UI order. Need a device with a faulty component to verify.
 
-- **~~Airflow setting bytes~~** — SETTINGS bytes 7-10 carry clock sync (day, hour, minute, second). The byte pairs (0x19/0x0A, 0x28/0x15, 0x07/0x30) are plausible timestamp values and are not confirmed as airflow configuration. See protocol.md §7.1 and #21.
+- **~~SETTINGS byte-pair semantics~~** — SETTINGS bytes 7-10 carry clock sync (day, hour, minute, second). The `AIRFLOW_BYTES` pairs (0x19/0x0A, 0x28/0x15, 0x07/0x30) are plausible timestamp values; their role as airflow configuration is unverified. See protocol.md §7.1 and #21.

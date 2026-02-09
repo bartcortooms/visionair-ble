@@ -128,7 +128,7 @@ class TestPacketBuilding:
             preheat_temp=16,
             airflow=AIRFLOW_MEDIUM,
         )
-        # Verify structure: magic + type + header + flags + temp + airflow bytes + checksum
+        # Verify structure: magic + type + header + flags + temp + AIRFLOW_BYTES pair + checksum
         assert packet[:2] == b"\xa5\xb6"  # magic
         assert packet[2] == 0x1a  # type
         assert packet[6] == 0x02  # byte 6 is always 0x02
