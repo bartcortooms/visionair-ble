@@ -216,14 +216,14 @@ This command:
 
 Use `--force` to collect even if less than 15 minutes have passed.
 
-After running, read the screenshot and compare app values to packet bytes. If they differ, add a data point to GitHub issue #9.
+After running, read the screenshot and compare app values to packet bytes. If values differ, add a timestamped note in the current investigation issue/logbook.
 
 | Field | App Screen | Packet Location |
 |-------|------------|-----------------|
-| Remote temp | Remote Control → Temperature | STATUS byte 8 |
-| Remote humidity | Remote Control → Humidity | STATUS byte 4 |
-| Probe 1 temp | Probe N°1 → Temperature | HISTORY byte 6 |
-| Probe 1 humidity | Probe N°1 → Humidity | HISTORY byte 8 |
-| Probe 2 temp | Probe N°2 → Temperature | HISTORY byte 11 |
+| Remote temp | Remote Control → Temperature | SCHEDULE (0x02) byte 11 |
+| Remote humidity | Remote Control → Humidity | SCHEDULE (0x02) byte 13 |
+| Probe 1 temp | Probe N°1 → Temperature | PROBE_SENSORS (0x03) byte 6 |
+| Probe 1 humidity | Probe N°1 → Humidity | PROBE_SENSORS (0x03) byte 8 |
+| Probe 2 temp | Probe N°2 → Temperature | PROBE_SENSORS (0x03) byte 11 |
 
 Data is stored persistently in `data/captures/` (gitignored, survives reboots).
