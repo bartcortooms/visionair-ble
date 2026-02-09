@@ -12,7 +12,7 @@ This document tracks which protocol features from [protocol.md](protocol.md) are
 | Mode Select (0x10, param 0x18) | Yes | Yes | `build_mode_select_request(mode)` — controls fan speed. Physical speed change verified via vibration sensor 2026-02-08 ([#22](https://github.com/bartcortooms/visionair-ble/issues/22)) |
 | BOOST ON/OFF (0x10, param 0x19) | Yes | Yes | `build_boost_command()` |
 | Preheat Toggle (0x10, param 0x2F) | Yes | Yes | `build_preheat_request()` |
-| Settings (0x1a) - airflow/summer/temp | Yes | Yes | `build_settings_packet()` |
+| Settings (0x1a) - clock sync | Yes | No | Phone sends clock sync only; library sends config-mode packet (unverified, see #21) |
 | Holiday Command (0x10, param 0x1a) | Yes | Yes | `build_holiday_command(days)`, `VisionAirClient.set_holiday()` / `clear_holiday()` |
 | Unknown Query (0x10, param 0x2c) | Yes | Yes | `build_unknown_2c_query()` |
 | Night Ventilation (0x1a, byte7=0x04) — hypothetical | Partial | Experimental | `build_night_ventilation_activate()` — [#6](https://github.com/bartcortooms/visionair-ble/issues/6) |
@@ -47,7 +47,7 @@ This document tracks which protocol features from [protocol.md](protocol.md) are
 | `ScheduleSlot` dataclass | Yes | Yes | Per-hour schedule slot (preheat temp + mode) |
 | `ScheduleConfig` dataclass | Yes | Yes | 24-hour schedule (list of slots) |
 | Schedule mode byte mapping | Yes | Yes | LOW=0x28, MEDIUM=0x32, HIGH=0x3C |
-| Airflow mode mapping | Yes | Yes | LOW/MEDIUM/HIGH — byte meaning unknown |
+| Airflow mode mapping | Yes | Yes | LOW/MEDIUM/HIGH — "airflow bytes" are clock sync artifacts (see #21) |
 | Volume-based calculation | Yes | Yes | ACH multipliers |
 | Sensor metadata for HA | Yes | Yes | Auto-discovery support |
 
@@ -66,4 +66,4 @@ Features that need more data before implementing:
 
 - **Diagnostic bitfield (byte 54)** — Only value 0x0F (all healthy) observed. Bit-to-component mapping is assumed based on UI order. Need a device with a faulty component to verify.
 
-- **Airflow setting bytes** — The byte pairs (0x19/0x0A, 0x28/0x15, 0x07/0x30) work for LOW/MEDIUM/HIGH but their actual meaning (PWM? calibration?) is unknown.
+- **~~Airflow setting bytes~~** — Resolved (#21). The byte pairs (0x19/0x0A, 0x28/0x15, 0x07/0x30) are clock sync minute:second values from early captures, not airflow configuration. SETTINGS bytes 7-10 carry (day, hour, minute, second). See protocol.md §7.1.

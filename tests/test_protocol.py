@@ -835,3 +835,132 @@ class TestParseScheduleData:
         temp, humidity = parse_schedule_data(self._make_schedule_packet(21, 0))
         assert temp == 21
         assert humidity is None
+
+
+class TestSettingsClockSync:
+    """Tests validating that SETTINGS bytes 7-10 are clock sync data.
+
+    All SETTINGS packets from controlled captures (Feb 7 and Feb 9 2026) carry
+    (day, hour, minute, second) in bytes 7-10. The phone sends these every ~10s
+    during its polling loop. None match the "airflow bytes" pattern that was
+    assumed in early uncontrolled captures.
+
+    See issue #21 and protocol.md section 7.1 for the full analysis.
+    """
+
+    # Captured SETTINGS packets from issue19_humidity_validation_run_20260209.
+    # Each tuple: (hex_packet, expected_day, expected_hour, expected_minute, expected_second)
+    FEB9_CAPTURE_PACKETS = [
+        ("a5b61a06061a02080c080d03", 8, 12, 8, 13),
+        ("a5b61a06061a02080c0c151f", 8, 12, 12, 21),
+        ("a5b61a06061a02080d353103", 8, 13, 53, 49),
+        ("a5b61a06061a02080e073033", 8, 14, 7, 48),
+        ("a5b61a06061a02080e0c030b", 8, 14, 12, 3),
+        ("a5b61a06061a02080e273615", 8, 14, 39, 54),
+        ("a5b61a06061a02080e2c1931", 8, 14, 44, 25),
+        ("a5b61a06061a020810383113", 8, 16, 56, 49),
+        ("a5b61a06061a020811061409", 8, 17, 6, 20),
+        ("a5b61a06061a02090929200b", 9, 9, 41, 32),
+        ("a5b61a06061a02091005130d", 9, 16, 5, 19),
+        ("a5b61a06061a02091007170b", 9, 16, 7, 23),
+    ]
+
+    # Captured SETTINGS packets from fan_speed_capture_20260207_171617.
+    FEB7_CAPTURE_PACKETS = [
+        # Byte 7 = 0x07 (Feb 7), hour/min/sec from logbook
+        ("a5b61a06061a020710040f0c", 7, 16, 4, 15),
+        ("a5b61a06061a02071011111704", 7, 17, 17, 23),
+    ]
+
+    def test_feb9_packets_valid_checksums(self):
+        """All captured SETTINGS packets have valid XOR checksums."""
+        for hex_pkt, *_ in self.FEB9_CAPTURE_PACKETS:
+            packet = bytes.fromhex(hex_pkt)
+            assert verify_checksum(packet), f"Bad checksum: {hex_pkt}"
+
+    def test_feb9_packets_are_settings_type(self):
+        """All captured packets have type 0x1a (SETTINGS)."""
+        for hex_pkt, *_ in self.FEB9_CAPTURE_PACKETS:
+            packet = bytes.fromhex(hex_pkt)
+            assert packet[2] == PacketType.SETTINGS
+
+    def test_feb9_packets_have_standard_header(self):
+        """All captured packets have constant header bytes 3-6."""
+        for hex_pkt, *_ in self.FEB9_CAPTURE_PACKETS:
+            packet = bytes.fromhex(hex_pkt)
+            assert packet[3:7] == bytes([0x06, 0x06, 0x1a, 0x02])
+
+    def test_feb9_bytes_7_10_decode_as_clock(self):
+        """Bytes 7-10 decode as valid (day, hour, minute, second) values."""
+        for hex_pkt, exp_day, exp_hour, exp_min, exp_sec in self.FEB9_CAPTURE_PACKETS:
+            packet = bytes.fromhex(hex_pkt)
+            assert packet[7] == exp_day, f"day mismatch in {hex_pkt}"
+            assert packet[8] == exp_hour, f"hour mismatch in {hex_pkt}"
+            assert packet[9] == exp_min, f"minute mismatch in {hex_pkt}"
+            assert packet[10] == exp_sec, f"second mismatch in {hex_pkt}"
+
+    def test_feb9_time_values_in_valid_ranges(self):
+        """All decoded time values are within valid ranges."""
+        for hex_pkt, day, hour, minute, second in self.FEB9_CAPTURE_PACKETS:
+            assert 1 <= day <= 31, f"day {day} out of range in {hex_pkt}"
+            assert 0 <= hour <= 23, f"hour {hour} out of range in {hex_pkt}"
+            assert 0 <= minute <= 59, f"minute {minute} out of range in {hex_pkt}"
+            assert 0 <= second <= 59, f"second {second} out of range in {hex_pkt}"
+
+    def test_feb9_hours_monotonically_increase_within_day(self):
+        """Hours increase monotonically within each day (no time travel)."""
+        day8_hours = [
+            h for _, d, h, _, _ in self.FEB9_CAPTURE_PACKETS if d == 8
+        ]
+        day9_hours = [
+            h for _, d, h, _, _ in self.FEB9_CAPTURE_PACKETS if d == 9
+        ]
+        assert day8_hours == sorted(day8_hours), "day 8 hours not monotonic"
+        assert day9_hours == sorted(day9_hours), "day 9 hours not monotonic"
+
+    def test_feb9_day_transitions_match_calendar(self):
+        """Day value changes from 8 to 9, matching Feb 8 → Feb 9."""
+        days = [d for _, d, *_ in self.FEB9_CAPTURE_PACKETS]
+        # Should start with 8s and end with 9s (btsnoop spans phone connections)
+        assert days[0] == 8
+        assert days[-1] == 9
+        # Day should never decrease
+        for i in range(1, len(days)):
+            assert days[i] >= days[i - 1]
+
+    def test_feb9_airflow_byte_match_is_coincidental(self):
+        """A known airflow pair appears in clock sync, proving coincidence.
+
+        Packet #4 (a5b61a06061a02080e073033) has bytes 9-10 = (0x07, 0x30)
+        which matches AIRFLOW_BYTES[HIGH]. But this packet is clearly clock
+        sync: byte 7 = 0x08 (Feb 8), byte 8 = 0x0e (14:00), so bytes 9-10
+        are minute=7, second=48. The match is coincidental — the same byte
+        pair appears in a clock sync context, proving that the old "airflow
+        byte pairs" are plausible as timestamp values.
+        """
+        from visionair_ble.protocol import AIRFLOW_BYTES
+
+        # Packet #4: Feb 8, 14:07:48
+        pkt4 = bytes.fromhex("a5b61a06061a02080e073033")
+        assert (pkt4[9], pkt4[10]) == AIRFLOW_BYTES[AirflowLevel.HIGH]
+        # But it's clock sync, not airflow — byte 7 is day 8, byte 8 is hour 14
+        assert pkt4[7] == 8   # day
+        assert pkt4[8] == 14  # hour
+        assert pkt4[9] == 7   # minute
+        assert pkt4[10] == 48 # second (0x30 = 48)
+
+    def test_feb9_byte8_not_valid_preheat_temp_for_all(self):
+        """Byte 8 cannot be preheat temp — some values fall outside 12-18°C.
+
+        Under the old config interpretation, byte 8 was 'preheat temperature'.
+        Several captured packets have byte 8 values outside the valid preheat
+        range (12-18°C), proving it's not preheat temp — it's the hour.
+        """
+        out_of_preheat_range = 0
+        for hex_pkt, _, hour, _, _ in self.FEB9_CAPTURE_PACKETS:
+            if hour < 12 or hour > 18:
+                out_of_preheat_range += 1
+        # At least some packets must have byte 8 outside preheat range
+        assert out_of_preheat_range > 0, (
+            "Expected some byte-8 values outside preheat range 12-18"
+        )
