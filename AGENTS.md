@@ -10,6 +10,7 @@ VisionAir BLE is a Python library for communicating with Ventilairsec VisionAir 
 - Never post private/internal identifiers in public text (LAN IPs, private hostnames, ADB targets, tokens, keys, MAC addresses, email/phone, exact home network details).
 - If technical context is needed, redact values (for example: `<private-ip>:<port>`).
 - If private details were posted accidentally, **delete and repost redacted** (editing may preserve history).
+- For GitHub issue/PR comments and PR bodies, use `gh ... --body-file` with a heredoc (`<<'EOF'`) instead of inline `--body "..."` strings, so markdown/newlines render correctly and content is not mangled by shell interpolation.
 
 ## Key Files
 
