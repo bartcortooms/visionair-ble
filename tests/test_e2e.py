@@ -458,16 +458,28 @@ class TestHolidayMode:
             )
             print(f"  set_holiday(3): holiday_days={status.holiday_days}")
 
-            # Clear holiday (fresh connection — proxy may drop after write)
-            await asyncio.sleep(PROXY_RECOVERY_DELAY)
-            async with connect_with_retry(address, proxy_host, proxy_key) as client:
-                visionair = VisionAirClient(client)
-                status = await visionair.clear_holiday()
-                assert isinstance(status, DeviceStatus)
-                assert status.holiday_days == 0, (
-                    f"Expected holiday_days=0 after clear, got {status.holiday_days}"
-                )
-                print(f"  clear_holiday(): holiday_days={status.holiday_days}")
+            # Clear holiday. Retry once — same proxy-drop pattern as set.
+            for attempt in range(2):
+                try:
+                    if attempt > 0:
+                        await asyncio.sleep(PROXY_RECOVERY_DELAY * 2)
+                    else:
+                        await asyncio.sleep(PROXY_RECOVERY_DELAY)
+                    async with connect_with_retry(address, proxy_host, proxy_key) as client:
+                        visionair = VisionAirClient(client)
+                        status = await visionair.clear_holiday()
+                    break
+                except (TimeoutError, ConnectionError, OSError) as e:
+                    if attempt == 0:
+                        print(f"  clear_holiday attempt 1 failed ({e}), retrying...")
+                    else:
+                        raise
+
+            assert isinstance(status, DeviceStatus)
+            assert status.holiday_days == 0, (
+                f"Expected holiday_days=0 after clear, got {status.holiday_days}"
+            )
+            print(f"  clear_holiday(): holiday_days={status.holiday_days}")
         except Exception:
             # Always clean up — ensure holiday is off
             try:
@@ -505,27 +517,53 @@ class TestPreheatTemperature:
         test_temp = 18 if original_temp != 18 else 14
 
         try:
-            # Set new preheat temperature
-            await asyncio.sleep(PROXY_RECOVERY_DELAY)
-            async with connect_with_retry(address, proxy_host, proxy_key) as client:
-                visionair = VisionAirClient(client)
-                status = await visionair.set_preheat_temperature(test_temp)
-                assert isinstance(status, DeviceStatus)
-                assert status.preheat_temp == test_temp, (
-                    f"Expected preheat_temp={test_temp}, got {status.preheat_temp}"
-                )
-                print(f"  set_preheat_temperature({test_temp}): preheat_temp={status.preheat_temp}°C")
+            # Set new preheat temperature. Retry once — the proxy may
+            # drop the DEVICE_STATE notification after a write command.
+            status = None
+            for attempt in range(2):
+                try:
+                    if attempt > 0:
+                        await asyncio.sleep(PROXY_RECOVERY_DELAY * 2)
+                    else:
+                        await asyncio.sleep(PROXY_RECOVERY_DELAY)
+                    async with connect_with_retry(address, proxy_host, proxy_key) as client:
+                        visionair = VisionAirClient(client)
+                        status = await visionair.set_preheat_temperature(test_temp)
+                    break
+                except (TimeoutError, ConnectionError, OSError) as e:
+                    if attempt == 0:
+                        print(f"  set_preheat attempt 1 failed ({e}), retrying...")
+                    else:
+                        raise
 
-            # Restore original temperature
-            await asyncio.sleep(PROXY_RECOVERY_DELAY)
-            async with connect_with_retry(address, proxy_host, proxy_key) as client:
-                visionair = VisionAirClient(client)
-                status = await visionair.set_preheat_temperature(original_temp)
-                assert isinstance(status, DeviceStatus)
-                assert status.preheat_temp == original_temp, (
-                    f"Expected preheat_temp={original_temp} after restore, got {status.preheat_temp}"
-                )
-                print(f"  Restored: preheat_temp={status.preheat_temp}°C")
+            assert isinstance(status, DeviceStatus)
+            assert status.preheat_temp == test_temp, (
+                f"Expected preheat_temp={test_temp}, got {status.preheat_temp}"
+            )
+            print(f"  set_preheat_temperature({test_temp}): preheat_temp={status.preheat_temp}°C")
+
+            # Restore original temperature. Same retry pattern.
+            for attempt in range(2):
+                try:
+                    if attempt > 0:
+                        await asyncio.sleep(PROXY_RECOVERY_DELAY * 2)
+                    else:
+                        await asyncio.sleep(PROXY_RECOVERY_DELAY)
+                    async with connect_with_retry(address, proxy_host, proxy_key) as client:
+                        visionair = VisionAirClient(client)
+                        status = await visionair.set_preheat_temperature(original_temp)
+                    break
+                except (TimeoutError, ConnectionError, OSError) as e:
+                    if attempt == 0:
+                        print(f"  restore_preheat attempt 1 failed ({e}), retrying...")
+                    else:
+                        raise
+
+            assert isinstance(status, DeviceStatus)
+            assert status.preheat_temp == original_temp, (
+                f"Expected preheat_temp={original_temp} after restore, got {status.preheat_temp}"
+            )
+            print(f"  Restored: preheat_temp={status.preheat_temp}°C")
         except Exception:
             # Always clean up — restore original temperature
             try:
