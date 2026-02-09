@@ -221,13 +221,85 @@ Byte 4 in DEVICE_STATE is documented as remote humidity but was always 55 across
 
 **Method:** Use checkpoint captures on the Instantaneous Measurements screen, switching between Remote/Probe1/Probe2 sensors, recording displayed values at each checkpoint.
 
+**Runbook (issue #19):**
+
+```bash
+# 0) Preflight: verify device reachable and unlocked (read-only checks)
+python scripts/capture/preflight_capture.py --issue 19
+
+# 1) Start session
+SESSION=$(./scripts/capture/vmictl.py session-start issue19_humidity_validation)
+
+# 2) Measurements and sensor checkpoints (one action at a time)
+./scripts/capture/vmictl.py measurements-full
+./scripts/capture/vmictl.py session-checkpoint "$SESSION" "measurements-full"
+./scripts/capture/vmictl.py sensors
+./scripts/capture/vmictl.py sensor-remote
+./scripts/capture/vmictl.py session-checkpoint "$SESSION" "sensor=remote"
+./scripts/capture/vmictl.py sensor-probe1
+./scripts/capture/vmictl.py session-checkpoint "$SESSION" "sensor=probe1"
+./scripts/capture/vmictl.py sensor-probe2
+./scripts/capture/vmictl.py session-checkpoint "$SESSION" "sensor=probe2"
+
+# 3) End and extract
+./scripts/capture/vmictl.py session-end "$SESSION"
+python scripts/capture/extract_packets.py "$SESSION/btsnoop.log" --checkpoints "$SESSION/checkpoints.txt"
+```
+
+> If preflight reports `keyguard=locked`, unlock manually first.
+> `vmictl` UI commands can otherwise appear to hang while selectors wait.
+
 ### Night Ventilation & Fixed Air Flow
 
 Packet mapping unknown. These modes have UI toggles in Configuration → Special Modes but we haven't captured their protocol encoding. May use `REQUEST` (0x10) or `SETTINGS` (0x1a) path.
 
+**Runbook (issue #6):**
+
+```bash
+python scripts/capture/preflight_capture.py --issue 6
+SESSION=$(./scripts/capture/vmictl.py session-start night_ventilation_decode)
+
+# Baseline in Special Modes page
+./scripts/capture/vmictl.py special-modes-full
+./scripts/capture/vmictl.py session-checkpoint "$SESSION" "baseline"
+
+# Manual step: toggle only Night Ventilation ON in app
+./scripts/capture/vmictl.py session-checkpoint "$SESSION" "night_vent_on"
+
+# Wait for delayed writes/acks, then checkpoint
+sleep 15
+./scripts/capture/vmictl.py session-checkpoint "$SESSION" "night_vent_on_plus15s"
+
+# Manual step: toggle OFF, then checkpoint
+./scripts/capture/vmictl.py session-checkpoint "$SESSION" "night_vent_off"
+
+./scripts/capture/vmictl.py session-end "$SESSION"
+python scripts/capture/extract_packets.py "$SESSION/btsnoop.log" --checkpoints "$SESSION/checkpoints.txt"
+python scripts/analyze_settings_packets.py "$SESSION/btsnoop.log"
+```
+
+Repeat the run 3x; keep other settings unchanged to reduce packet noise.
+
 ### Bypass State
 
 Encoding unknown (weather dependent). Look for status byte changes correlated with bypass icon state.
+
+**Runbook (issue #5):**
+
+```bash
+python scripts/capture/preflight_capture.py --issue 5
+SESSION=$(./scripts/capture/vmictl.py session-start bypass_observation)
+
+# Keep configuration stable; only observe and checkpoint when icon changes.
+./scripts/capture/vmictl.py measurements-full
+./scripts/capture/vmictl.py session-checkpoint "$SESSION" "bypass_icon=<open|closed> outside=<temp/wind>"
+
+# Repeat checkpointing over natural weather transitions (morning/evening swings).
+./scripts/capture/vmictl.py session-end "$SESSION"
+python scripts/capture/extract_packets.py "$SESSION/btsnoop.log" --checkpoints "$SESSION/checkpoints.txt"
+```
+
+Suggested worksheet columns: timestamp, bypass icon state, outside temp/wind, airflow mode, candidate packet bytes.
 
 ### Diagnostic Bitfield (byte 54)
 
