@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Extract all SETTINGS (0x1a) packets from a btsnoop log with timestamps.
 
-Prints raw hex bytes and decoded fields for each SETTINGS packet,
-for investigating whether bytes 5-10 carry clock sync data or config data.
+Prints raw hex bytes and decoded fields for each SETTINGS packet.
+Bytes 7-10 are clock sync fields (day, hour, minute, second) in all
+observed phone app traffic. Config-mode semantics are unverified.
 """
 
 import sys
@@ -40,13 +41,6 @@ def main():
           f"{'Decoded':40}")
     print("-" * 140)
 
-    # Known airflow byte pairs
-    airflow_names = {
-        (0x19, 0x0A): "LOW",
-        (0x28, 0x15): "MEDIUM",
-        (0x07, 0x30): "HIGH",
-    }
-
     for i, pkt in enumerate(settings_pkts):
         data = bytes.fromhex(pkt['hex'])
         ts = pkt['timestamp']
@@ -56,8 +50,8 @@ def main():
             continue
 
         # Bytes after magic (a5b6):
-        # [2]=type, [3]=?, [4]=?, [5]=0x1a, [6]=const, [7]=summer/mode,
-        # [8]=preheat_temp, [9]=airflow_b1, [10]=airflow_b2, [11]=checksum
+        # [2]=type, [3]=?, [4]=?, [5]=0x1a, [6]=const,
+        # [7]=day, [8]=hour, [9]=minute, [10]=second, [11]=checksum
         b3 = data[3]
         b4 = data[4]
         b5 = data[5]
@@ -68,21 +62,19 @@ def main():
         b10 = data[10]
         checksum = data[11]
 
-        # Decode
-        airflow_pair = (b9, b10)
-        airflow_name = airflow_names.get(airflow_pair, f"?({b9:#04x},{b10:#04x})")
+        # Primary decode: clock sync (day, hour, minute, second)
+        clock = f"day={b7} h={b8:02d}:{b9:02d}:{b10:02d}"
 
-        summer = "SUM_ON" if b7 == 0x02 else ("SUM_OFF" if b7 == 0x00 else f"mode={b7:#04x}")
-        preheat = f"pre={b8}°C"
+        # Note if byte 7 is low (0x00/0x02) — could indicate config-mode
+        # rather than clock sync (unverified)
+        if b7 <= 0x02:
+            clock += "  [low day — config-mode?]"
 
-        decoded = f"{summer}, {preheat}, airflow={airflow_name}"
-
-        # Also show if bytes 7-10 could be clock data (day, hour, min, sec)
-        clock_interp = f"  [clock? day={b7} h={b8} m={b9} s={b10}]"
+        decoded = clock
 
         print(f"{i+1:3}  {ts:>26}  {pkt['hex']:24}  "
               f"{b3:3d} {b4:3d} {b5:#04x} {b6:3d} {b7:3d} {b8:3d} {b9:#04x} {b10:#04x}  "
-              f"{decoded}{clock_interp}")
+              f"{decoded}")
 
     # Also show SETTINGS_ACK packets (0x23) for context
     ack_pkts = [p for p in packets['raw_packets'] if p['type'] == 0x23]
