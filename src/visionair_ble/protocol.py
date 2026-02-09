@@ -20,9 +20,10 @@ Packet types (phone → device):
   "send me the current device state") and state changes (e.g. "set airflow to HIGH").
   The specific operation is determined by the RequestParam byte. This is the primary
   way the phone interacts with the device — most controls go through REQUEST.
-- SETTINGS (0x1a): Bulk configuration writes. Used for parameters that are sent as a
-  group (summer limit temperature, airflow volume bytes). Less commonly used than
-  REQUEST; the phone uses SETTINGS only for a few specific configuration changes.
+- SETTINGS (0x1a): Clock sync. The phone sends SETTINGS every ~10s with the
+  current time in bytes 7-10 (day, hour, minute, second). The library also uses
+  SETTINGS for config writes (summer limit), but this usage is unverified against
+  the phone app. See protocol.md section 7.1.
 
 Packet types (device → phone):
 - DEVICE_STATE (0x01): Device config and settings (182 bytes)
@@ -144,7 +145,7 @@ class PacketType:
 
     # Phone → device (commands)
     REQUEST = 0x10              # General-purpose command (queries + state changes)
-    SETTINGS = 0x1A             # Bulk configuration write (summer limit, airflow bytes)
+    SETTINGS = 0x1A             # Clock sync + possibly config (see protocol.md §7.1)
     SCHEDULE_WRITE = 0x40       # Schedule config write (55 bytes) — experimental
     SCHEDULE_CONFIG = 0x46      # Schedule config response (182 bytes) — experimental
     SCHEDULE_QUERY = 0x47       # Schedule query — experimental
@@ -180,10 +181,16 @@ class RequestParam:
 
 
 class SettingsMode:
-    """Settings mode (byte 7 in 0x1a settings packets)."""
+    """Settings mode (byte 7 in 0x1a settings packets).
 
-    NORMAL = 0x00               # Normal airflow/preheat settings
-    SUMMER_LIMIT = 0x02         # Summer limit temperature
+    In clock sync packets, byte 7 carries the day-of-month (values 0x06-0x09
+    observed). NORMAL and SUMMER_LIMIT are used by the library for config
+    writes, but whether the device firmware distinguishes config-mode SETTINGS
+    (byte 7 <= 0x05) from clock-sync SETTINGS (byte 7 >= 0x06) is unverified.
+    """
+
+    NORMAL = 0x00               # Config mode: summer limit OFF (unverified)
+    SUMMER_LIMIT = 0x02         # Config mode: summer limit ON (unverified)
     SPECIAL_MODE = 0x04         # Holiday/Night Vent/Fixed Air Flow
     SCHEDULE = 0x05             # Schedule on/off
 
@@ -294,14 +301,17 @@ DEVICE_NAMES = ("visionair", "purevent", "urban", "cube")
 # Airflow Configuration
 # =============================================================================
 
-# Airflow mode -> (byte1, byte2) for settings packet
-# These byte pairs are universal mode selectors - the device firmware
-# applies the appropriate airflow based on its volume calibration.
-# Hypothesis from PSoC analysis: these may represent PWM duty cycles.
+# SETTINGS packet bytes 9-10 — byte pairs keyed by airflow level.
+#
+# Used by build_settings_packet() for config-mode SETTINGS writes.
+# These byte pairs are also valid as clock sync minute:second values,
+# and their role as airflow configuration is unverified — the phone
+# controls airflow via REQUEST param 0x18, not SETTINGS.
+# See protocol.md section 7.1.
 AIRFLOW_BYTES: dict[int, tuple[int, int]] = {
-    AirflowLevel.LOW: (0x19, 0x0A),     # LOW mode
-    AirflowLevel.MEDIUM: (0x28, 0x15),  # MEDIUM mode
-    AirflowLevel.HIGH: (0x07, 0x30),    # HIGH mode
+    AirflowLevel.LOW: (0x19, 0x0A),     # LOW mode (unverified)
+    AirflowLevel.MEDIUM: (0x28, 0x15),  # MEDIUM mode (unverified)
+    AirflowLevel.HIGH: (0x07, 0x30),    # HIGH mode (unverified)
 }
 
 # Status response byte 47 -> airflow mode protocol value
@@ -312,7 +322,7 @@ AIRFLOW_INDICATOR: dict[int, int] = {
 }
 
 # Schedule slot mode byte <-> AirflowLevel
-# These differ from settings airflow bytes (which use two-byte pairs).
+# These differ from AIRFLOW_BYTES (which use two-byte pairs for SETTINGS).
 # Schedule slots use a single byte per mode.
 SCHEDULE_MODE_BYTES: dict[int, int] = {
     AirflowLevel.LOW: 0x28,
@@ -331,7 +341,7 @@ MODE_NAMES: dict[int, str] = {
 
 
 class AirflowBytes(NamedTuple):
-    """Airflow encoding as two bytes."""
+    """Two-byte pair for SETTINGS packets (semantics unverified)."""
 
     byte1: int
     byte2: int
@@ -848,15 +858,22 @@ def build_settings_packet(
     preheat_temp: int,
     airflow: int,
 ) -> bytes:
-    """Build a settings command packet.
+    """Build a settings command packet (type 0x1a).
 
-    Controls airflow level, preheat temperature, and summer limit.
-    Note: preheat on/off is toggled separately via build_preheat_request().
+    Constructs a config-mode SETTINGS packet with summer limit, preheat
+    temperature, and `AIRFLOW_BYTES` pair. Preheat on/off is toggled
+    separately via build_preheat_request().
+
+    Note: The phone app uses SETTINGS for clock sync (bytes 7-10 = day,
+    hour, minute, second), not config writes. This config-mode format
+    (byte 7 = summer limit mode, bytes 9-10 = `AIRFLOW_BYTES` pair) is
+    used by set_summer_limit() and the device responds with SETTINGS_ACK,
+    but the exact byte semantics are unverified against the phone app.
 
     Args:
-        summer_limit_enabled: Enable summer limit
-        preheat_temp: Target temperature in °C (typically 14-22)
-        airflow: Airflow mode (AirflowLevel.LOW/MEDIUM/HIGH or 131/164/201)
+        summer_limit_enabled: Enable summer limit (byte 7: 0x02=ON, 0x00=OFF)
+        preheat_temp: Target temperature in °C (byte 8, typically 14-22)
+        airflow: Airflow mode (AirflowLevel.LOW/MEDIUM/HIGH)
 
     Returns:
         Complete packet bytes ready to send

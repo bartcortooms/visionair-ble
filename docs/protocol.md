@@ -369,7 +369,8 @@ Each slot is 2 bytes:
 | Mode 3 | 0x3C | 60 | HIGH |
 
 > **Note:** The decimal values follow a regular 40/50/60 pattern, unlike the
-> settings airflow bytes which use unrelated two-byte pairs.
+> `AIRFLOW_BYTES` pairs used by `build_settings_packet()` (two-byte pairs
+> with unverified semantics).
 
 **Example** (hour 0 set to HIGH at 18°C, hours 1-8 LOW, 9-17 MEDIUM, 18-23 LOW):
 ```
@@ -406,9 +407,10 @@ allowing manual mode changes via 0x18 to persist indefinitely.
 
 ### 7.1 Settings & Clock Sync (type 0x1a)
 
-The SETTINGS command is used by the phone app primarily for clock synchronization.
+The phone app sends SETTINGS packets every ~10 seconds as a clock sync.
+Bytes 7-10 carry the current time (day, hour, minute, second).
 
-Structure: `a5b6 1a 06 06 1a 02 <byte7> <byte8> <byte9> <byte10> <checksum>`
+Structure: `a5b6 1a 06 06 1a 02 <day> <hour> <minute> <second> <checksum>`
 
 | Offset | Size | Description |
 |--------|------|-------------|
@@ -416,56 +418,45 @@ Structure: `a5b6 1a 06 06 1a 02 <byte7> <byte8> <byte9> <byte10> <checksum>`
 | 2 | 1 | Type `0x1a` |
 | 3-5 | 3 | Header `06 06 1a` |
 | 6 | 1 | Always `0x02` in captures |
-| 7 | 1 | Mode byte / day (see below) |
-| 8 | 1 | Hour or preheat temperature (see below) |
-| 9 | 1 | Minute (clock sync) or config byte |
-| 10 | 1 | Second (clock sync) or config byte |
+| 7 | 1 | Day (of month) |
+| 8 | 1 | Hour (0-23) |
+| 9 | 1 | Minute (0-59) |
+| 10 | 1 | Second (0-59) |
 | 11 | 1 | XOR checksum |
 
-**Mode byte (offset 7) values:**
+**Example decoded packets:**
 
-| Value | Meaning |
-|-------|---------|
-| `0x00` | Normal settings (summer limit OFF) — from early captures |
-| `0x02` | Normal settings (summer limit ON) — from early captures |
-| `0x05` | Schedule command |
-| `0x06`, `0x07` | Clock sync (day-of-month or day-of-week) |
-
-**Clock sync (bytes 7-10):**
-
-The phone sends SETTINGS every ~10s during its polling loop. In these packets,
-bytes 7-10 carry the current time:
-
-| Offset | Description | Range |
-|--------|-------------|-------|
-| 7 | Day (of month or week) | Observed 0x06, 0x07 |
-| 8 | Hour | 0-23 |
-| 9 | Minute | 0-59 |
-| 10 | Second | 0-59 |
-
-Evidence from capture `fan_speed_capture_20260207_171617`:
-
-| Byte 7 | Byte 8 | Byte 9 | Byte 10 | Interpreted time |
+| Byte 7 | Byte 8 | Byte 9 | Byte 10 | Decoded time |
 |--------|--------|--------|---------|-----------------|
-| 0x07 | 0x10 (16) | 0x04 (4) | 0x0f (15) | day 7, 16:04:15 |
-| 0x07 | 0x10 (16) | 0x0b (11) | 0x0a (10) | day 7, 16:11:10 |
-| 0x07 | 0x10 (16) | 0x24 (36) | 0x05 (5) | day 7, 16:36:05 |
-| 0x07 | 0x11 (17) | 0x04 (4) | 0x23 (35) | day 7, 17:04:35 |
-| 0x07 | 0x11 (17) | 0x11 (17) | 0x17 (17) | day 7, 17:17:17 |
+| 0x07 | 0x10 (16) | 0x04 (4) | 0x0f (15) | Feb 7, 16:04:15 |
+| 0x07 | 0x11 (17) | 0x11 (17) | 0x17 (17) | Feb 7, 17:17:17 |
+| 0x08 | 0x0e (14) | 0x07 (7) | 0x30 (48) | Feb 8, 14:07:48 |
+| 0x09 | 0x09 (9) | 0x29 (41) | 0x20 (32) | Feb 9, 09:41:32 |
 
-The hour increases monotonically and minutes/seconds wrap at 60. Byte 7
-changed from 0x06 to 0x07 across the capture (Feb 6 → Feb 7, or Saturday
-encoded differently).
+Hours increase monotonically within each day; minutes and seconds stay in
+the 0-59 range. Byte 7 tracks the day-of-month.
 
-> **Not yet verified:** Whether the same bytes carry config data (preheat temp,
-> airflow) when the user changes settings in the app. The config bytes (3-6)
-> were constant across all 29 SETTINGS packets in this capture. Early captures
-> contained mode values 0x00/0x02 for config writes, but these have not been
-> reproduced in recent controlled captures. It is unclear whether bytes 8-10
-> carry different data in those cases.
+**`AIRFLOW_BYTES` in the codebase:**
 
-**SETTINGS bytes 9-10 are a clock sync, not airflow** — they carry the
-current minute and second.
+The library's `AIRFLOW_BYTES` constant contains three byte pairs used by
+`build_settings_packet()`:
+- LOW: `(0x19, 0x0A)` — also valid as minute=25, second=10
+- MEDIUM: `(0x28, 0x15)` — also valid as minute=40, second=21
+- HIGH: `(0x07, 0x30)` — also valid as minute=7, second=48
+
+These byte pairs are plausible clock sync timestamps and have not been
+confirmed as airflow configuration. The phone controls airflow mode via
+REQUEST param 0x18, not via SETTINGS.
+
+**Byte 7 observed values:**
+
+| Value range | Interpretation |
+|-------------|----------------|
+| 0x00, 0x02 | Unknown — may be low day-of-month values or a config sub-command |
+| 0x06-0x09 | Day-of-month (confirmed by correlation with calendar dates) |
+
+Whether the device firmware supports a config-mode SETTINGS variant
+(distinguished by low byte 7 values) is unverified.
 
 ### 7.2 Special Modes
 
@@ -657,14 +648,15 @@ Value `0x0F` (all bits set) indicates all components healthy.
 ### Open Questions
 
 **SETTINGS packet (0x1a):**
-- Bytes 7-10 carry a clock sync (day, hour, minute, second) during the phone's
-  regular polling. Whether the same bytes serve a different purpose during
-  config writes (summer limit changes, etc.) is not yet verified.
-- Early captures contained SETTINGS byte pairs matching known airflow modes
-  (0x19/0x0a=LOW, 0x28/0x15=MEDIUM, 0x07/0x30=HIGH). These do not appear
-  in recent controlled captures where bytes 7-10 consistently carry clock
-  sync data. They may be from a different SETTINGS sub-command (mode byte
-  0x00/0x02 vs 0x06/0x07).
+- Bytes 7-10 carry clock sync (day, hour, minute, second). See §7.1.
+- The phone controls airflow via REQUEST param 0x18, not SETTINGS.
+- `AIRFLOW_BYTES` values are plausible clock sync timestamps, not confirmed
+  airflow configuration.
+- `build_settings_packet()` sends byte 7 = 0x00/0x02, which the phone does
+  not use. Whether the device firmware interprets low byte-7 values as a
+  config sub-command is unverified. The function is retained because
+  `set_summer_limit()` gets a SETTINGS_ACK response. A capture of the
+  phone's summer limit toggle would clarify the correct protocol.
 
 **Unknown REQUEST params:**
 - Param 0x29: the phone sends this heavily after connecting (~65 times with
