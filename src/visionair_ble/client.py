@@ -194,17 +194,16 @@ class VisionAirClient:
         """Get device status with fresh sensor readings.
 
         Sends three separate requests to collect all sensor data:
-        - DEVICE_STATE (0x01): device config, airflow mode, remote humidity
+        - DEVICE_STATE (0x01): device config and airflow mode
         - PROBE_SENSORS (0x03): probe temperatures and humidity
-        - FULL_DATA_Q (0x06): triggers SCHEDULE (0x02) with remote temperature
+        - FULL_DATA_Q (0x06): triggers SCHEDULE (0x02) with remote temperature/humidity
 
         Separate requests are needed because some BLE proxies (e.g. ESPHome)
         only forward one notification per write command. FULL_DATA_Q returns
         multiple packets but the proxy may drop all but the first.
 
         Sensor data sources:
-        - Remote temperature: SCHEDULE packet byte 11
-        - Remote humidity: DEVICE_STATE packet byte 4
+        - Remote temperature/humidity: SCHEDULE packet bytes 11/13
         - Probe 1 temp/humidity: PROBE_SENSORS packet bytes 6/8
         - Probe 2 temperature: PROBE_SENSORS packet byte 11
 

@@ -25,7 +25,7 @@ Packet types (phone → device):
   REQUEST; the phone uses SETTINGS only for a few specific configuration changes.
 
 Packet types (device → phone):
-- DEVICE_STATE (0x01): Device config, settings, and Remote humidity (182 bytes)
+- DEVICE_STATE (0x01): Device config and settings (182 bytes)
 - PROBE_SENSORS (0x03): Current probe temperature and humidity readings (182 bytes)
 - SCHEDULE (0x02): Time slot configuration + Remote temperature and humidity
 - SETTINGS_ACK (0x23): Acknowledgment of a SETTINGS write

@@ -194,8 +194,7 @@ a5b6 10 06 05 07 00 00 00 00 14
 
 > **Note:** This packet does NOT contain Remote sensor data. Remote temperature
 > and humidity are in the **SCHEDULE packet** (type 0x02, bytes 11 and 13),
-> returned by FULL_DATA_Q (param 0x06). Remote humidity is also in
-> DEVICE_STATE byte 4.
+> returned by FULL_DATA_Q (param 0x06).
 
 ### 4.4 Remote Sensor Data (in Schedule packet, type 0x02)
 
