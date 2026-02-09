@@ -262,7 +262,24 @@ class VMICtl:
             self._current_session_file.unlink()
         (session_dir / "session_end.txt").write_text(time.strftime("%Y-%m-%dT%H:%M:%S%z"), encoding="utf-8")
         bugreport = session_dir / "bugreport.zip"
-        self.adb_run("bugreport", str(bugreport))
+
+        # ADB-over-WiFi can intermittently fail bugreport with protocol faults.
+        # Retry once after an explicit reconnect so long captures are not lost.
+        last_err: Exception | None = None
+        for attempt in range(2):
+            try:
+                self.adb_run("bugreport", str(bugreport))
+                break
+            except RuntimeError as exc:
+                last_err = exc
+                if attempt == 1:
+                    raise
+                if self.adb_target:
+                    self.adb_run("connect", self.adb_target, check=False)
+                time.sleep(2)
+
+        if last_err is not None and not bugreport.exists():
+            raise RuntimeError(f"bugreport failed: {last_err}")
 
         log_path = session_dir / "btsnoop.log"
         with zipfile.ZipFile(bugreport) as zf:
