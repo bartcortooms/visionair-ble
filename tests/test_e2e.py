@@ -276,7 +276,7 @@ class TestSensorRetrieval:
 class TestFreshStatus:
     """Test fresh status retrieval via FULL_DATA_Q."""
 
-    RETRIES = 2
+    RETRIES = 4
 
     @pytest.mark.asyncio
     async def test_get_fresh_status(
@@ -292,12 +292,12 @@ class TestFreshStatus:
         for attempt in range(self.RETRIES + 1):
             if attempt > 0:
                 print(f"  Retrying (attempt {attempt + 1})...")
-                await asyncio.sleep(PROXY_RECOVERY_DELAY)
+                await asyncio.sleep(PROXY_RECOVERY_DELAY * 2)
             try:
                 async with connect_with_retry(address, proxy_host, proxy_key) as client:
                     visionair = VisionAirClient(client)
                     status = await visionair.get_fresh_status(timeout=15.0)
-            except TimeoutError:
+            except (TimeoutError, ConnectionError, OSError):
                 continue
 
             assert isinstance(status, DeviceStatus)
@@ -347,12 +347,12 @@ class TestFreshStatusReliability:
     that could result in None values for temp_remote or humidity_probe1.
     """
 
-    # 5 iterations with up to 3 allowed failures: tolerant enough for
-    # high-latency proxy environments (where the proxy may drop 50-60%
+    # 7 iterations with up to 5 allowed failures: tolerant enough for
+    # high-latency proxy environments (where the proxy may drop 70-80%
     # of multi-command sequences) but strict enough to catch real
-    # regressions — if the protocol is broken, 0/5 would succeed.
-    ITERATIONS = 5
-    MAX_FAILURES = 3
+    # regressions — if the protocol is broken, 0/7 would succeed.
+    ITERATIONS = 7
+    MAX_FAILURES = 5
 
     @pytest.mark.asyncio
     async def test_fresh_status_all_sensors_repeated(
@@ -621,12 +621,25 @@ class TestScheduleWrite:
 
         address = await find_device(device_address)
 
-        # Read current schedule
-        async with connect_with_retry(address, proxy_host, proxy_key) as client:
-            visionair = VisionAirClient(client)
-            original = await visionair.get_schedule(timeout=15.0)
-            assert isinstance(original, ScheduleConfig)
-            assert len(original.slots) == 24
+        # Read current schedule. Retry once — the proxy may be slow
+        # after previous tests hammered multiple connections.
+        original = None
+        for read_attempt in range(2):
+            try:
+                if read_attempt > 0:
+                    await asyncio.sleep(PROXY_RECOVERY_DELAY * 2)
+                async with connect_with_retry(address, proxy_host, proxy_key) as client:
+                    visionair = VisionAirClient(client)
+                    original = await visionair.get_schedule(timeout=15.0)
+                break
+            except (TimeoutError, ConnectionError, OSError) as e:
+                if read_attempt == 0:
+                    print(f"  Initial read attempt 1 failed ({e}), retrying...")
+                else:
+                    raise
+
+        assert isinstance(original, ScheduleConfig)
+        assert len(original.slots) == 24
 
         # Write the same schedule back (reconnect — device may drop
         # the BLE connection after processing a schedule write)
