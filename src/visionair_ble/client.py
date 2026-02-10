@@ -80,6 +80,18 @@ class VisionAirClient:
         self._status_char: Any = None
         self._command_char: Any = None
 
+    async def _stop_notify(self) -> None:
+        """Stop notifications, ignoring errors if already disconnected.
+
+        The BLE proxy may disconnect while we're waiting for a notification
+        (e.g. on timeout). The stop_notify call in the finally block would
+        then raise BleakError("not connected"), masking the original error.
+        """
+        try:
+            await self._client.stop_notify(self._status_char)
+        except Exception:
+            pass
+
     def _find_characteristics(self) -> None:
         """Find device characteristics from services.
 
@@ -133,7 +145,7 @@ class VisionAirClient:
             )
             await asyncio.wait_for(event.wait(), timeout=timeout)
         finally:
-            await self._client.stop_notify(self._status_char)
+            await self._stop_notify()
 
         if not status_data:
             raise TimeoutError("No status response received")
@@ -176,7 +188,7 @@ class VisionAirClient:
             )
             await asyncio.wait_for(event.wait(), timeout=timeout)
         finally:
-            await self._client.stop_notify(self._status_char)
+            await self._stop_notify()
 
         if not sensor_data:
             raise TimeoutError("No sensor response received")
@@ -259,10 +271,7 @@ class VisionAirClient:
                     pass
 
         finally:
-            try:
-                await self._client.stop_notify(self._status_char)
-            except Exception:
-                pass
+            await self._stop_notify()
 
         if not status_data:
             raise TimeoutError("No status response received")
@@ -360,7 +369,7 @@ class VisionAirClient:
             await self._client.write_gatt_char(self._command_char, packet, response=True)
             await asyncio.wait_for(event.wait(), timeout=timeout)
         finally:
-            await self._client.stop_notify(self._status_char)
+            await self._stop_notify()
 
         if not status_data:
             raise TimeoutError("No status response received")
@@ -421,7 +430,7 @@ class VisionAirClient:
             await self._client.write_gatt_char(self._command_char, packet, response=True)
             await asyncio.wait_for(ack_received.wait(), timeout=timeout)
         finally:
-            await self._client.stop_notify(self._status_char)
+            await self._stop_notify()
 
         await asyncio.sleep(0.5)
         return await self.get_status()
@@ -464,7 +473,7 @@ class VisionAirClient:
             await self._client.write_gatt_char(self._command_char, packet, response=True)
             await asyncio.wait_for(event.wait(), timeout=timeout)
         finally:
-            await self._client.stop_notify(self._status_char)
+            await self._stop_notify()
 
         if not status_data:
             raise TimeoutError("No status response received")
@@ -521,7 +530,7 @@ class VisionAirClient:
             await self._client.write_gatt_char(self._command_char, packet, response=True)
             await asyncio.wait_for(ack_received.wait(), timeout=timeout)
         finally:
-            await self._client.stop_notify(self._status_char)
+            await self._stop_notify()
 
         await asyncio.sleep(0.5)
         return await self.get_status()
@@ -564,7 +573,7 @@ class VisionAirClient:
             await self._client.write_gatt_char(self._command_char, packet, response=True)
             await asyncio.wait_for(event.wait(), timeout=timeout)
         finally:
-            await self._client.stop_notify(self._status_char)
+            await self._stop_notify()
 
         if not status_data:
             raise TimeoutError("No status response received")
@@ -625,7 +634,7 @@ class VisionAirClient:
             await self._client.write_gatt_char(self._command_char, packet, response=True)
             await asyncio.wait_for(ack_received.wait(), timeout=timeout)
         finally:
-            await self._client.stop_notify(self._status_char)
+            await self._stop_notify()
 
         if status_data:
             status = parse_status(status_data)
@@ -670,7 +679,7 @@ class VisionAirClient:
             )
             await asyncio.wait_for(event.wait(), timeout=timeout)
         finally:
-            await self._client.stop_notify(self._status_char)
+            await self._stop_notify()
 
         if not config_data:
             raise TimeoutError("No schedule config response received")
@@ -718,7 +727,7 @@ class VisionAirClient:
             )
             await asyncio.wait_for(ack_received.wait(), timeout=timeout)
         finally:
-            await self._client.stop_notify(self._status_char)
+            await self._stop_notify()
 
     @property
     def last_status(self) -> DeviceStatus | None:

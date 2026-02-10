@@ -48,7 +48,8 @@ uv run pytest -m e2e -v
 
 ### E2E Tests
 
-E2E tests require a real VisionAir device. Configuration via `.env` or CLI flags:
+E2E tests require a real VisionAir device, and this project does have real hardware available for validation (not CI-only simulation).
+Configuration via `.env` or CLI flags:
 - `VISIONAIR_MAC` - VisionAir device MAC address (or `--device-address`)
 - `ESPHOME_PROXY_HOST` - ESPHome BLE proxy IP address (or `--proxy-host`)
 - `ESPHOME_API_KEY` - ESPHome API encryption key (or `--proxy-key`)
