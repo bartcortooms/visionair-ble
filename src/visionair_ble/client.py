@@ -406,10 +406,11 @@ class VisionAirClient:
         """Enable or disable BOOST mode.
 
         BOOST mode runs the fan at maximum for 30 minutes, then auto-deactivates.
+        Uses REQUEST param 0x19; the device responds with a DEVICE_STATE packet.
 
         Args:
             enable: True to enable BOOST, False to disable
-            timeout: How long to wait for acknowledgment
+            timeout: How long to wait for response
 
         Returns:
             Updated DeviceStatus after change
@@ -418,22 +419,32 @@ class VisionAirClient:
 
         packet = build_boost_command(enable)
 
-        ack_received = asyncio.Event()
+        status_data: bytes | None = None
+        event = asyncio.Event()
 
         def handler(*args: Any) -> None:
+            nonlocal status_data
             data = args[-1]
-            if bytes(data[:2]) == MAGIC and data[2] == PacketType.SETTINGS_ACK:
-                ack_received.set()
+            if bytes(data[:2]) == MAGIC and data[2] == PacketType.DEVICE_STATE:
+                status_data = bytes(data)
+                event.set()
 
         await self._client.start_notify(self._status_char, handler)
         try:
             await self._client.write_gatt_char(self._command_char, packet, response=True)
-            await asyncio.wait_for(ack_received.wait(), timeout=timeout)
+            await asyncio.wait_for(event.wait(), timeout=timeout)
         finally:
             await self._stop_notify()
 
-        await asyncio.sleep(0.5)
-        return await self.get_status()
+        if not status_data:
+            raise TimeoutError("No status response received")
+
+        status = parse_status(status_data)
+        if not status:
+            raise ValueError("Invalid status response")
+
+        self._last_status = status
+        return status
 
     async def set_holiday(self, days: int, timeout: float = 10.0) -> DeviceStatus:
         """Set holiday mode duration.
@@ -506,10 +517,11 @@ class VisionAirClient:
         """Enable or disable winter preheat.
 
         Uses REQUEST param 0x2F to toggle preheat on/off.
+        The device responds with a DEVICE_STATE packet.
 
         Args:
             enabled: Whether to enable preheat
-            timeout: How long to wait for acknowledgment
+            timeout: How long to wait for response
 
         Returns:
             Updated DeviceStatus
@@ -518,22 +530,32 @@ class VisionAirClient:
 
         packet = build_preheat_request(enabled)
 
-        ack_received = asyncio.Event()
+        status_data: bytes | None = None
+        event = asyncio.Event()
 
         def handler(*args: Any) -> None:
+            nonlocal status_data
             data = args[-1]
-            if bytes(data[:2]) == MAGIC and data[2] == PacketType.SETTINGS_ACK:
-                ack_received.set()
+            if bytes(data[:2]) == MAGIC and data[2] == PacketType.DEVICE_STATE:
+                status_data = bytes(data)
+                event.set()
 
         await self._client.start_notify(self._status_char, handler)
         try:
             await self._client.write_gatt_char(self._command_char, packet, response=True)
-            await asyncio.wait_for(ack_received.wait(), timeout=timeout)
+            await asyncio.wait_for(event.wait(), timeout=timeout)
         finally:
             await self._stop_notify()
 
-        await asyncio.sleep(0.5)
-        return await self.get_status()
+        if not status_data:
+            raise TimeoutError("No status response received")
+
+        status = parse_status(status_data)
+        if not status:
+            raise ValueError("Invalid status response")
+
+        self._last_status = status
+        return status
 
     async def set_preheat_temperature(
         self,
