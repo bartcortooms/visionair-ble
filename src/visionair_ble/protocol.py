@@ -365,9 +365,7 @@ class DeviceStatus:
 
     # Sensors - airflow
     airflow: int = field(metadata=sensor("Airflow", unit="m³/h", device_class="volume_flow_rate"))
-    airflow_mode: str = field(metadata=sensor(
-        "Airflow mode", options=["low", "medium", "high", "unknown"]
-    ))
+    airflow_mode: str = ""
     configured_volume: int | None = None
     airflow_low: int | None = None
     airflow_medium: int | None = None
