@@ -395,7 +395,7 @@ class DeviceStatus:
         "Filter days remaining", unit="d", device_class="duration"
     ))
     operating_days: int | None = field(default=None, metadata=sensor(
-        "Operating days", unit="d", device_class="duration", state_class="total_increasing", enabled_default=False
+        "Operating days", unit="d", device_class="duration", state_class="total_increasing"
     ))
 
     # Settings (exposed as interactive controls in HA, not as sensors)
