@@ -368,18 +368,10 @@ class DeviceStatus:
     airflow_mode: str = field(metadata=sensor(
         "Airflow mode", options=["low", "medium", "high", "unknown"]
     ))
-    configured_volume: int | None = field(default=None, metadata=sensor(
-        "Configured volume", unit="m³", enabled_default=False
-    ))
-    airflow_low: int | None = field(default=None, metadata=sensor(
-        "Airflow low", unit="m³/h", device_class="volume_flow_rate", enabled_default=False
-    ))
-    airflow_medium: int | None = field(default=None, metadata=sensor(
-        "Airflow medium", unit="m³/h", device_class="volume_flow_rate", enabled_default=False
-    ))
-    airflow_high: int | None = field(default=None, metadata=sensor(
-        "Airflow high", unit="m³/h", device_class="volume_flow_rate", enabled_default=False
-    ))
+    configured_volume: int | None = None
+    airflow_low: int | None = None
+    airflow_medium: int | None = None
+    airflow_high: int | None = None
 
     # Sensors - temperatures
     temp_remote: int | None = field(default=None, metadata=sensor(
@@ -410,13 +402,9 @@ class DeviceStatus:
 
     # Settings (exposed as interactive controls in HA, not as sensors)
     preheat_enabled: bool = False
-    preheat_temp: int = field(default=0, metadata=sensor(
-        "Preheat setpoint", unit="°C", device_class="temperature", enabled_default=False, precision=0
-    ))
+    preheat_temp: int = 0
     summer_limit_enabled: bool = False
-    summer_limit_temp: int | None = field(default=None, metadata=sensor(
-        "Summer limit setpoint", unit="°C", device_class="temperature", enabled_default=False, precision=0
-    ))
+    summer_limit_temp: int | None = None
     boost_active: bool = False
     holiday_days: int = 0
 
