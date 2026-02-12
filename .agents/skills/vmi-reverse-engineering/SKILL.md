@@ -84,6 +84,7 @@ For phone setup, ADB connection, BT snoop logging details, and troubleshooting, 
 | `boost` | Activate BOOST mode |
 | `preheat-toggle` | Toggle preheat ON/OFF |
 | `preheat-temp <n>` | Set preheat temperature (12-18 or "mini") |
+| `summer-limit <n>` | Set summer limit temperature (22-37) |
 
 ### Holiday Mode (from Special modes screen) ⚡
 | Command | Description |
@@ -91,7 +92,7 @@ For phone setup, ADB connection, BT snoop logging details, and troubleshooting, 
 | `holiday-toggle` | Toggle Holiday mode ON/OFF |
 | `holiday-days <n>` | Set Holiday duration to n days |
 
-> ⚡ = **modifies VMI state**. These commands (plus `airflow`, `airflow-min`, `airflow-max`, `preheat-temp`, `firmware-update`) are automatically logged to `data/captures/vmi_actions.log`. If a capture session is active, an automatic checkpoint (screenshot + timestamp) is also taken — no need to call `session-checkpoint` manually.
+> ⚡ = **modifies VMI state**. These commands (plus `airflow`, `airflow-min`, `airflow-max`, `preheat-temp`, `summer-limit`, `firmware-update`) are automatically logged to `data/captures/vmi_actions.log`. If a capture session is active, an automatic checkpoint (screenshot + timestamp) is also taken — no need to call `session-checkpoint` manually.
 
 ### Utility
 | Command | Description |

@@ -238,6 +238,78 @@ class VMIUIActionsMixin:
         self.screenshot(confirm_path)
         return confirm_path
 
+    def summer_limit(self, temperature: int) -> str:
+        """Set the summer limit temperature on the Simplified Configuration screen.
+
+        Args:
+            temperature: Target temperature (22-37).
+
+        Returns:
+            Path to the confirmation screenshot.
+        """
+        if temperature < 22 or temperature > 37:
+            raise RuntimeError(
+                f"summer-limit temperature must be 22-37, got: {temperature}"
+            )
+
+        # Navigate to the Simplified Configuration screen.
+        self.nav("simplified")
+
+        # The summer section button contains the current temperature badge.
+        # Find it by its content-desc which includes "DURING THE SUMMER" text.
+        xml = self.ui_dump()
+        summer_node = None
+        for node in self.nodes(xml):
+            if "DURING THE SUMMER" in node.desc:
+                summer_node = node
+                break
+
+        if summer_node is None:
+            raise RuntimeError(
+                "summer limit section not found on Simplified Configuration screen"
+            )
+
+        # The temperature badge/dropdown trigger is at the bottom-right of the
+        # summer section button.  Tap at ~75% horizontal, ~89% vertical within
+        # the button bounds.
+        x1, y1, x2, y2 = summer_node.bounds
+        badge_x = x1 + int((x2 - x1) * 0.75)
+        badge_y = y1 + int((y2 - y1) * 0.89)
+        self.tap(badge_x, badge_y, delay=1.0)
+
+        # The Flutter dropdown renders items as canvas elements that may not
+        # appear in the UI hierarchy.  Try the UI dump first, fall back to
+        # coordinate calculation.
+        target_desc = f"{temperature} °C"
+        xml = self.ui_dump()
+        target_node = None
+        for node in self.nodes(xml):
+            if node.desc.strip() == target_desc:
+                target_node = node
+                break
+
+        if target_node is not None:
+            x, y = target_node.center
+        else:
+            # Coordinate fallback: the dropdown spans the right side of the
+            # screen with items from 22°C at the top to 37°C at the bottom.
+            # Empirically calibrated on 1080×2340 display:
+            #   22°C center ≈ y=200, item spacing ≈ 140px, x ≈ 900.
+            width, height = self.display_size()
+            x = int(width * (900 / 1080))
+            y_base = int(height * (200 / 2340))
+            item_h = int(height * (140 / 2340))
+            y = y_base + (temperature - 22) * item_h
+        self.tap(x, y, delay=2.0)
+
+        # Confirm the result.
+        with __import__("tempfile").NamedTemporaryFile(
+            suffix=".png", delete=False
+        ) as tmp:
+            confirm_path = tmp.name
+        self.screenshot(confirm_path)
+        return confirm_path
+
     def schedule_tab(self, tab: str) -> None:
         self.nav("time-slots")
         selector = {

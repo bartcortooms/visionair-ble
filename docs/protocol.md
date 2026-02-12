@@ -437,9 +437,9 @@ allowing manual mode changes via 0x18 to persist indefinitely.
 
 ### 7.1 Sync Packet (type 0x1a)
 
-The phone app sends SYNC packets every ~10 seconds. Bytes 7-10 carry the
-current time (day, hour, minute, second). Bytes 3-6 have been constant
-across all captures but may carry config state (see below).
+The phone app sends a SYNC packet once per BLE connection (not periodically).
+Bytes 7-10 carry the current time (day, hour, minute, second). Bytes 3-6
+are constant across all captures.
 
 Structure: `a5b6 1a 06 06 <b5> <b6> <day> <hour> <minute> <second> <checksum>`
 
@@ -448,8 +448,8 @@ Structure: `a5b6 1a 06 06 <b5> <b6> <day> <hour> <minute> <second> <checksum>`
 | 0-1 | 2 | Magic `a5b6` |
 | 2 | 1 | Type `0x1a` |
 | 3-4 | 2 | Header `06 06` |
-| 5 | 1 | Constant `0x1a` (= 26) in all captures — matches summer limit temp (26°C) |
-| 6 | 1 | Constant `0x02` in all captures — matches summer limit enabled (0x02=ON) |
+| 5 | 1 | Constant `0x1a` — purpose unknown (does NOT track summer limit temperature) |
+| 6 | 1 | Constant `0x02` — purpose unknown |
 | 7 | 1 | Day of month |
 | 8 | 1 | Hour (0-23, UTC) |
 | 9 | 1 | Minute (0-59) |
@@ -467,18 +467,16 @@ interpreted as `[day, hour(UTC), minute, second]`.
 | 0x08 | 0x0e (14) | 0x07 (7) | 0x30 (48) | Feb 8, 14:07:48 |
 | 0x08 | 0x11 (17) | 0x06 (6) | 0x14 (20) | Feb 8, 17:06:20 |
 
-**Bytes 5-6 may carry config state.** In all captures, byte 5 = `0x1a` (26)
-and byte 6 = `0x02`. These match the current summer limit temperature (26°C)
-and summer limit enabled flag (0x02=ON). However, the summer limit has never
-been at a different value while a SYNC packet was being sent, so this
-interpretation is unverified.
+**Bytes 5-6 are constant (not config state).** Tested 2026-02-12: changed
+the summer limit from 26°C to 24°C, then reconnected. The SYNC packet still
+had byte 5 = `0x1a` (26). The apparent match with summer limit temperature
+was coincidental. Byte 6 = `0x02` also did not change. Both bytes have the
+same value across all observed SYNC packets (4 connections over 2 days).
 
-**Configuration changes use REQUEST, not SYNC.** A controlled capture
-(2026-02-08) of the phone changing preheat temperature, summer limit, and
-airflow mode showed that all changes used dedicated REQUEST params
-(0x1C, 0x17, 0x18). No SYNC packets were sent during config changes. The
-phone's SYNC packets continued their regular ~10s clock sync pattern
-unchanged.
+**SYNC is sent once per connection, not periodically.** Across 4 connections
+(2026-02-08 through 2026-02-12), only one SYNC packet was observed per BLE
+connection, sent immediately after the initial handshake. The app polls
+device state using REQUEST packets (every ~10s), not SYNC.
 
 The device responds to SYNC packets with ACK (type 0x23).
 
@@ -672,11 +670,9 @@ Value `0x0F` (all bits set) indicates all components healthy.
 ### Open Questions
 
 **SYNC packet (0x1a):**
-- Bytes 5-6 are constant (`0x1a`, `0x02`) across all captures. They match
-  the current summer limit temperature (26°C) and enabled flag (0x02=ON),
-  but this is unverified — the summer limit has never been at a different
-  value during a SYNC send. Need a capture with summer limit disabled or at
-  a different temperature to confirm.
+- Bytes 5-6 are constant (`0x1a`, `0x02`) and do NOT track summer limit
+  settings (tested 2026-02-12). Purpose unknown — may be firmware-specific
+  constants or relate to a different setting that hasn't been varied.
 
 **Unknown REQUEST params:**
 - Param 0x29: the phone sends this heavily after connecting (~65 times with
