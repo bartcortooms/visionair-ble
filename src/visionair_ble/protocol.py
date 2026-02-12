@@ -10,8 +10,8 @@ Supported devices:
 
 Protocol overview:
 - All packets start with magic bytes 0xa5 0xb6
-- Packet type in byte 2: 0x01=device_state, 0x03=probe_sensors, 0x10=request, 0x1a=settings, 0x23=ack
-- Settings packets use XOR checksum (all bytes after magic, excluding final checksum byte)
+- Packet type in byte 2: 0x01=device_state, 0x03=probe_sensors, 0x10=request, 0x1a=sync, 0x23=ack
+- Sync packets use XOR checksum (all bytes after magic, excluding final checksum byte)
 - BLE uses Cypress PSoC demo profile UUIDs (vendor reused generic UUIDs)
 - All devices advertise as "VisionAir" over BLE
 
@@ -20,16 +20,16 @@ Packet types (phone → device):
   "send me the current device state") and state changes (e.g. "set airflow to HIGH").
   The specific operation is determined by the RequestParam byte. This is the primary
   way the phone interacts with the device — most controls go through REQUEST.
-- SETTINGS (0x1a): Clock sync. The phone sends SETTINGS every ~10s with the
-  current time in bytes 7-10 (day, hour, minute, second). The library also uses
-  SETTINGS for config writes (summer limit), but this usage is unverified against
-  the phone app. See protocol.md section 7.1.
+- SYNC (0x1a): Clock sync. The phone sends SYNC every ~10s with the
+  current time in bytes 7-10 (day, hour, minute, second). Bytes 5-6
+  may carry config state (summer limit temp and enabled flag).
+  See protocol.md section 7.1.
 
 Packet types (device → phone):
 - DEVICE_STATE (0x01): Device config and settings (182 bytes)
 - PROBE_SENSORS (0x03): Current probe temperature and humidity readings (182 bytes)
 - SCHEDULE (0x02): Time slot configuration + Remote temperature and humidity
-- SETTINGS_ACK (0x23): Acknowledgment of a SETTINGS write
+- ACK (0x23): Acknowledgment of a SYNC or schedule write
 
 Remote temperature and humidity are in the SCHEDULE packet (type 0x02, byte 11 and 13).
 For accurate probe temperatures, use the PROBE_SENSORS packet or get_sensors().
@@ -141,11 +141,11 @@ class PacketType:
     DEVICE_STATE = 0x01         # Device config + Remote sensor (182 bytes)
     SCHEDULE = 0x02             # Time slot schedule data
     PROBE_SENSORS = 0x03        # Probe sensor readings (182 bytes)
-    SETTINGS_ACK = 0x23         # Acknowledgment of SETTINGS write
+    ACK = 0x23                  # Acknowledgment of SYNC or schedule write
 
     # Phone → device (commands)
     REQUEST = 0x10              # General-purpose command (queries + state changes)
-    SETTINGS = 0x1A             # Clock sync + possibly config (see protocol.md §7.1)
+    SYNC = 0x1A                 # Clock sync + possibly config (see protocol.md §7.1)
     SCHEDULE_WRITE = 0x40       # Schedule config write (55 bytes) — experimental
     SCHEDULE_CONFIG = 0x46      # Schedule config response (182 bytes) — experimental
     SCHEDULE_QUERY = 0x47       # Schedule query — experimental
@@ -173,20 +173,21 @@ class RequestParam:
     # Changes DEVICE_STATE bytes 34 (selector), 47 (indicator), 60,
     # the physical fan speed, and the VMI remote display.
     # The phone sends this when the user taps LOW/MEDIUM/HIGH fan buttons.
+    SUMMER_LIMIT_TEMP = 0x17    # Set summer limit temperature (value: degrees C, e.g. 26)
     BOOST = 0x19                # Toggle boost (value: 0=OFF, 1=ON)
     HOLIDAY = 0x1A              # Set holiday days (byte 9 = days, 0=OFF)
-    SCHEDULE_TOGGLE = 0x1D      # Toggle time slots (value: 0=OFF, 1=ON)
     PREHEAT_TEMP = 0x1C         # Set preheat temperature (value: degrees C, e.g. 16)
+    SCHEDULE_TOGGLE = 0x1D      # Toggle time slots (value: 0=OFF, 1=ON)
     PREHEAT = 0x2F              # Toggle preheat (value: 0=OFF, 1=ON)
 
 
-class SettingsMode:
-    """Settings mode (byte 7 in 0x1a settings packets).
+class SyncMode:
+    """Mode byte (byte 7) in SYNC packets (type 0x1a).
 
     In clock sync packets, byte 7 carries the day-of-month (values 0x06-0x09
     observed). NORMAL and SUMMER_LIMIT are used by the library for config
-    writes, but whether the device firmware distinguishes config-mode SETTINGS
-    (byte 7 <= 0x05) from clock-sync SETTINGS (byte 7 >= 0x06) is unverified.
+    writes, but whether the device firmware distinguishes config-mode SYNC
+    (byte 7 <= 0x05) from clock-sync SYNC (byte 7 >= 0x06) is unverified.
     """
 
     NORMAL = 0x00               # Config mode: summer limit OFF (unverified)
@@ -301,12 +302,12 @@ DEVICE_NAMES = ("visionair", "purevent", "urban", "cube")
 # Airflow Configuration
 # =============================================================================
 
-# SETTINGS packet bytes 9-10 — byte pairs keyed by airflow level.
+# SYNC packet bytes 9-10 — byte pairs keyed by airflow level.
 #
-# Used by build_settings_packet() for config-mode SETTINGS writes.
+# Used by build_sync_packet() for config-mode SYNC writes.
 # These byte pairs are also valid as clock sync minute:second values,
 # and their role as airflow configuration is unverified — the phone
-# controls airflow via REQUEST param 0x18, not SETTINGS.
+# controls airflow via REQUEST param 0x18, not SYNC.
 # See protocol.md section 7.1.
 AIRFLOW_BYTES: dict[int, tuple[int, int]] = {
     AirflowLevel.LOW: (0x19, 0x0A),     # LOW mode (unverified)
@@ -322,7 +323,7 @@ AIRFLOW_INDICATOR: dict[int, int] = {
 }
 
 # Schedule slot mode byte <-> AirflowLevel
-# These differ from AIRFLOW_BYTES (which use two-byte pairs for SETTINGS).
+# These differ from AIRFLOW_BYTES (which use two-byte pairs for SYNC).
 # Schedule slots use a single byte per mode.
 SCHEDULE_MODE_BYTES: dict[int, int] = {
     AirflowLevel.LOW: 0x28,
@@ -341,7 +342,7 @@ MODE_NAMES: dict[int, str] = {
 
 
 class AirflowBytes(NamedTuple):
-    """Two-byte pair for SETTINGS packets (semantics unverified)."""
+    """Two-byte pair for SYNC packets (semantics unverified)."""
 
     byte1: int
     byte2: int
@@ -351,7 +352,7 @@ class AirflowBytes(NamedTuple):
 class DeviceStatus:
     """Device state from DEVICE_STATE packet (type 0x01).
 
-    Contains device configuration, settings, and Remote sensor readings.
+    Contains device configuration and Remote sensor readings.
     For reliable probe temperatures, use SensorData from PROBE_SENSORS packet.
 
     Fields with sensor metadata will be auto-discovered by the HA integration.
@@ -580,7 +581,7 @@ def build_full_data_request() -> bytes:
     """Build a full data request packet.
 
     This triggers the device to send a sequence of responses:
-    - SETTINGS_ACK (0x23)
+    - ACK (0x23)
     - DEVICE_STATE (0x01) - device config + Remote humidity
     - SCHEDULE (0x02) - Remote temperature (byte 11) and humidity (byte 13)
     - PROBE_SENSORS (0x03) - current probe readings
@@ -732,7 +733,7 @@ def _raise_special_mode_unsupported(feature: str, *, _experimental: bool) -> Non
     _require_experimental(_experimental, feature)
     raise ExperimentalFeatureError(
         f"{feature} encoding is unknown. "
-        "The SETTINGS-based path (byte7=0x04) for this feature has not been "
+        "The SYNC-based path (byte7=0x04) for this feature has not been "
         "observed in captures. "
         "We cannot generate valid packets without the encoding algorithm."
     )
@@ -837,21 +838,21 @@ def build_schedule_write(config: ScheduleConfig) -> bytes:
     return MAGIC + bytes(payload) + bytes([checksum])
 
 
-def build_settings_packet(
+def build_sync_packet(
     summer_limit_enabled: bool,
     preheat_temp: int,
     airflow: int,
 ) -> bytes:
-    """Build a settings command packet (type 0x1a).
+    """Build a sync command packet (type 0x1a).
 
-    Constructs a config-mode SETTINGS packet with summer limit, preheat
+    Constructs a config-mode SYNC packet with summer limit, preheat
     temperature, and `AIRFLOW_BYTES` pair. Preheat on/off is toggled
     separately via build_preheat_request().
 
-    Note: The phone app uses SETTINGS for clock sync (bytes 7-10 = day,
+    Note: The phone app uses SYNC for clock sync (bytes 7-10 = day,
     hour, minute, second), not config writes. This config-mode format
     (byte 7 = summer limit mode, bytes 9-10 = `AIRFLOW_BYTES` pair) is
-    used by set_summer_limit() and the device responds with SETTINGS_ACK,
+    used by set_summer_limit() and the device responds with ACK,
     but the exact byte semantics are unverified against the phone app.
 
     Args:
@@ -875,7 +876,7 @@ def build_settings_packet(
     af_b1, af_b2 = AIRFLOW_BYTES[airflow]
 
     payload = bytes([
-        PacketType.SETTINGS,
+        PacketType.SYNC,
         0x06,
         0x06,
         0x1A,

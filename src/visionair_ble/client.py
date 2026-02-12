@@ -39,7 +39,7 @@ from .protocol import (
     build_schedule_toggle,
     build_schedule_write,
     build_sensor_request,
-    build_settings_packet,
+    build_sync_packet,
     build_status_request,
     parse_schedule_config,
     parse_schedule_data,
@@ -452,7 +452,7 @@ class VisionAirClient:
         Holiday mode puts the device in a low-power state for the specified
         number of days. The remaining days can be read from DeviceStatus.holiday_days.
 
-        The device responds with a DEVICE_STATE packet (not SETTINGS_ACK).
+        The device responds with a DEVICE_STATE packet (not ACK).
 
         Args:
             days: Number of holiday days (0=OFF, 1-255=active)
@@ -631,12 +631,12 @@ class VisionAirClient:
 
         current = self._last_status
         temp = current.preheat_temp if current else 16
-        # Use current airflow level for the SETTINGS packet
+        # Use current airflow level for the SYNC packet
         airflow = AIRFLOW_MEDIUM
         if current and current.airflow_mode != "unknown":
             airflow = {"low": AIRFLOW_LOW, "medium": AIRFLOW_MEDIUM, "high": AIRFLOW_HIGH}[current.airflow_mode]
 
-        packet = build_settings_packet(enabled, temp, airflow)
+        packet = build_sync_packet(enabled, temp, airflow)
 
         status_data: bytes | None = None
         ack_received = asyncio.Event()
@@ -648,7 +648,7 @@ class VisionAirClient:
                 if data[2] == PacketType.DEVICE_STATE:
                     status_data = bytes(data)
                     ack_received.set()
-                elif data[2] == PacketType.SETTINGS_ACK:
+                elif data[2] == PacketType.ACK:
                     ack_received.set()
 
         await self._client.start_notify(self._status_char, handler)
@@ -721,7 +721,7 @@ class VisionAirClient:
         """Write a schedule configuration to the device.
 
         Sends a 0x40 schedule config write packet and waits for the device
-        to acknowledge with a SETTINGS_ACK (0x23) response.
+        to acknowledge with an ACK (0x23) response.
 
         Args:
             config: ScheduleConfig with exactly 24 slots
@@ -739,7 +739,7 @@ class VisionAirClient:
 
         def handler(*args: Any) -> None:
             data = args[-1]
-            if bytes(data[:2]) == MAGIC and data[2] == PacketType.SETTINGS_ACK:
+            if bytes(data[:2]) == MAGIC and data[2] == PacketType.ACK:
                 ack_received.set()
 
         await self._client.start_notify(self._status_char, handler)

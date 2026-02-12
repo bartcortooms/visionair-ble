@@ -25,7 +25,7 @@ from visionair_ble.protocol import (
     build_schedule_toggle,
     build_schedule_write,
     build_mode_select_request,
-    build_settings_packet,
+    build_sync_packet,
     build_status_request,
     calc_checksum,
     is_visionair_device,
@@ -111,9 +111,9 @@ class TestPacketBuilding:
         assert packet == bytes.fromhex("a5b61006052f000000003c")
         assert verify_checksum(packet)
 
-    def test_build_settings_low(self):
-        """Test settings packet for LOW airflow."""
-        packet = build_settings_packet(
+    def test_build_sync_low(self):
+        """Test sync packet for LOW airflow."""
+        packet = build_sync_packet(
             summer_limit_enabled=True,
             preheat_temp=16,
             airflow=AIRFLOW_LOW,
@@ -121,9 +121,9 @@ class TestPacketBuilding:
         assert packet == bytes.fromhex("a5b61a06061a020210190a03")
         assert verify_checksum(packet)
 
-    def test_build_settings_medium(self):
-        """Test settings packet for MEDIUM airflow."""
-        packet = build_settings_packet(
+    def test_build_sync_medium(self):
+        """Test sync packet for MEDIUM airflow."""
+        packet = build_sync_packet(
             summer_limit_enabled=True,
             preheat_temp=16,
             airflow=AIRFLOW_MEDIUM,
@@ -136,9 +136,9 @@ class TestPacketBuilding:
         assert packet[10] == 0x15  # airflow byte 2 for MEDIUM
         assert verify_checksum(packet)
 
-    def test_build_settings_high(self):
-        """Test settings packet for HIGH airflow."""
-        packet = build_settings_packet(
+    def test_build_sync_high(self):
+        """Test sync packet for HIGH airflow."""
+        packet = build_sync_packet(
             summer_limit_enabled=True,
             preheat_temp=16,
             airflow=AIRFLOW_HIGH,
@@ -146,14 +146,14 @@ class TestPacketBuilding:
         assert packet == bytes.fromhex("a5b61a06061a020210073027")
         assert verify_checksum(packet)
 
-    def test_build_settings_invalid_airflow(self):
-        """Test settings packet with invalid airflow raises."""
+    def test_build_sync_invalid_airflow(self):
+        """Test sync packet with invalid airflow raises."""
         with pytest.raises(ValueError, match="Airflow must be"):
-            build_settings_packet(True, 16, 150)
+            build_sync_packet(True, 16, 150)
 
-    def test_build_settings_summer_limit_disabled(self):
-        """Test settings packet with summer limit disabled."""
-        packet = build_settings_packet(
+    def test_build_sync_summer_limit_disabled(self):
+        """Test sync packet with summer limit disabled."""
+        packet = build_sync_packet(
             summer_limit_enabled=False,
             preheat_temp=16,
             airflow=AIRFLOW_MEDIUM,
@@ -837,14 +837,14 @@ class TestParseScheduleData:
         assert humidity is None
 
 
-class TestSettingsClockSync:
-    """Tests validating that SETTINGS bytes 7-10 are clock sync data.
+class TestSyncClockSync:
+    """Tests validating that SYNC bytes 7-10 are clock sync data.
 
-    SETTINGS bytes 7-10 carry (day, hour, minute, second). The phone sends
+    SYNC bytes 7-10 carry (day, hour, minute, second). The phone sends
     these every ~10s during its polling loop. See protocol.md section 7.1.
     """
 
-    # Captured SETTINGS packets from issue19_humidity_validation_run_20260209.
+    # Captured SYNC packets from issue19_humidity_validation_run_20260209.
     # Each tuple: (hex_packet, expected_day, expected_hour, expected_minute, expected_second)
     FEB9_CAPTURE_PACKETS = [
         ("a5b61a06061a02080c080d03", 8, 12, 8, 13),
@@ -861,7 +861,7 @@ class TestSettingsClockSync:
         ("a5b61a06061a02091007170b", 9, 16, 7, 23),
     ]
 
-    # Captured SETTINGS packets from fan_speed_capture_20260207_171617.
+    # Captured SYNC packets from fan_speed_capture_20260207_171617.
     FEB7_CAPTURE_PACKETS = [
         # Byte 7 = 0x07 (Feb 7), hour/min/sec from logbook
         ("a5b61a06061a020710040f0c", 7, 16, 4, 15),
@@ -869,16 +869,16 @@ class TestSettingsClockSync:
     ]
 
     def test_feb9_packets_valid_checksums(self):
-        """All captured SETTINGS packets have valid XOR checksums."""
+        """All captured SYNC packets have valid XOR checksums."""
         for hex_pkt, *_ in self.FEB9_CAPTURE_PACKETS:
             packet = bytes.fromhex(hex_pkt)
             assert verify_checksum(packet), f"Bad checksum: {hex_pkt}"
 
-    def test_feb9_packets_are_settings_type(self):
-        """All captured packets have type 0x1a (SETTINGS)."""
+    def test_feb9_packets_are_sync_type(self):
+        """All captured packets have type 0x1a (SYNC)."""
         for hex_pkt, *_ in self.FEB9_CAPTURE_PACKETS:
             packet = bytes.fromhex(hex_pkt)
-            assert packet[2] == PacketType.SETTINGS
+            assert packet[2] == PacketType.SYNC
 
     def test_feb9_packets_have_standard_header(self):
         """All captured packets have constant header bytes 3-6."""

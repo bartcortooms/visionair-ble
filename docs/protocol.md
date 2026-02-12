@@ -30,7 +30,7 @@ The VisionAir protocol is simple in structure but spread across multiple respons
 
 **Interface:** Two BLE GATT characteristics — one for writing commands, one for receiving notifications. That's the entire interface.
 
-**One command type does almost everything:** `REQUEST` (type `0x10`) is the primary command. A single parameter byte selects the operation — querying device state, reading sensors, changing fan speed, toggling preheat, and more. A second type, `SETTINGS` (type `0x1a`), handles clock sync and configuration writes.
+**One command type does almost everything:** `REQUEST` (type `0x10`) is the primary command. A single parameter byte selects the operation — querying device state, reading sensors, changing fan speed, toggling preheat, setting temperatures, and more. A second type, `SYNC` (type `0x1a`), is sent periodically by the phone app and carries the current time (and possibly config state).
 
 **Packet structure:** Every packet (commands and responses) uses the same envelope:
 
@@ -56,7 +56,7 @@ REQUEST command example (param 0x06 = "get everything"):
 | SCHEDULE | `0x02` | Time slot schedule, **Remote sensor** (temp + humidity) |
 | PROBE_SENSORS | `0x03` | Live probe temperatures and humidity |
 
-**The "get everything" shortcut:** A single `FULL_DATA_Q` request (param `0x06`) triggers all three response packets plus a settings acknowledgment. This is more efficient than querying each individually and is the primary polling method used by the VMI+ phone app.
+**The "get everything" shortcut:** A single `FULL_DATA_Q` request (param `0x06`) triggers all three response packets plus an acknowledgment. This is more efficient than querying each individually and is the primary polling method used by the VMI+ phone app.
 
 **Single connection:** The device accepts only one BLE client at a time. Disconnect other clients (phone app, Home Assistant integration) before connecting.
 
@@ -65,7 +65,7 @@ REQUEST command example (param 0x06 = "get everything"):
     │                                │
     │  ── REQUEST (param 0x06) ──►   │   "Get everything"
     │                                │
-    │  ◄── SETTINGS_ACK (0x23) ──    │
+    │  ◄── ACK          (0x23) ──     │
     │  ◄── DEVICE_STATE (0x01) ──    │   Config + settings
     │  ◄── SCHEDULE    (0x02) ──     │   Schedule + remote sensor
     │  ◄── PROBE_SENSORS (0x03) ──   │   Live probe readings
@@ -129,7 +129,7 @@ a5b6 10 06 05 06 00 00 00 00 15
 ```
 
 **Response sequence:**
-1. SETTINGS_ACK (type 0x23)
+1. ACK (type 0x23)
 2. DEVICE_STATE (type 0x01) — device config + Remote sensor
 3. SCHEDULE (type 0x02) — schedule + Remote temp/humidity
 4. PROBE_SENSORS (type 0x03) — current probe readings
@@ -271,9 +271,9 @@ remote control display, and the fan motor speed.
 | BOOST ON | `a5b610060519000000010b` | Enable 30-min BOOST |
 | BOOST OFF | `a5b610060519000000000a` | Disable BOOST |
 
-### 5.3 Preheat (param 0x2F)
+### 5.3 Preheat Toggle (param 0x2F)
 
-Toggles winter preheat on or off. This is a separate command from the Settings packet.
+Toggles winter preheat on or off.
 
 | Command | Packet | Description |
 |---------|--------|-------------|
@@ -282,7 +282,39 @@ Toggles winter preheat on or off. This is a separate command from the Settings p
 
 The preheat state is reflected in DEVICE_STATE byte 53 (`0x01`=ON, `0x00`=OFF).
 
-### 5.4 Holiday (param 0x1a)
+### 5.4 Preheat Temperature (param 0x1C)
+
+Sets the preheat target temperature in °C. The phone app's Simplified
+Configuration screen shows a dropdown with values: Mini, 12-18°C.
+
+| Command | Packet | Description |
+|---------|--------|-------------|
+| Set 14°C | `a5b61006051c0000000e01` | Byte 9 = 0x0e = 14 |
+| Set 16°C | `a5b61006051c000000101f` | Byte 9 = 0x10 = 16 |
+
+The preheat temperature is reflected in DEVICE_STATE byte 56.
+
+> **Verified (2026-02-08):** Captured the phone changing preheat from 16→14→16°C.
+> The phone sends REQUEST param 0x1C with the new temperature in byte 9.
+
+### 5.5 Summer Limit Temperature (param 0x17)
+
+Sets the summer limit threshold temperature in °C. When outdoor temperature
+exceeds this value, the device limits incoming air flow.
+
+| Command | Packet | Description |
+|---------|--------|-------------|
+| Set 25°C | `a5b610060517000000191d` | Byte 9 = 0x19 = 25 |
+| Set 26°C | `a5b6100605170000001a1e` | Byte 9 = 0x1a = 26 |
+
+The summer limit temperature is reflected in DEVICE_STATE byte 38.
+Summer limit enabled/disabled state is in byte 50 (`0x02`=ON).
+
+> **Verified (2026-02-08):** Captured the phone changing summer limit from
+> 26→25→26°C. The phone sends REQUEST param 0x17 with the new temperature
+> in byte 9.
+
+### 5.6 Holiday (param 0x1a)
 
 | Command | Packet | Description |
 |---------|--------|-------------|
@@ -295,7 +327,7 @@ responds with a DEVICE_STATE packet (~130ms) reflecting the new value in
 byte 43 (`holiday_days`).
 
 **Response type:** The device responds with DEVICE_STATE (0x01), not
-SETTINGS_ACK (0x23). This differs from SETTINGS commands.
+ACK (0x23).
 
 > Verified via controlled capture sessions on 2026-02-05 and 2026-02-06.
 > Byte 43 changes instantly to match the value sent and returns to 0 when cleared.
@@ -337,7 +369,7 @@ a5b6 47 06 18 00 08 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
 ### 6.2 Writing the Schedule (type 0x40)
 
 Writes the full 24-hour schedule configuration to the device. The device
-responds with SETTINGS_ACK (type 0x23) within ~200ms.
+responds with ACK (type 0x23) within ~200ms.
 
 The app sends the full 24-hour schedule on every single-slot change.
 
@@ -368,9 +400,7 @@ Each slot is 2 bytes:
 | Mode 2 | 0x32 | 50 | MEDIUM |
 | Mode 3 | 0x3C | 60 | HIGH |
 
-> **Note:** The decimal values follow a regular 40/50/60 pattern, unlike the
-> `AIRFLOW_BYTES` pairs used by `build_settings_packet()` (two-byte pairs
-> with unverified semantics).
+> **Note:** The decimal values follow a regular 40/50/60 pattern.
 
 **Example** (hour 0 set to HIGH at 18°C, hours 1-8 LOW, 9-17 MEDIUM, 18-23 LOW):
 ```
@@ -380,7 +410,7 @@ a5b6 40 06 31 00 123c 1028 1028 1028 1028 1028 1028 1028
 ```
 
 > **Verified (2026-02-06):** Confirmed via controlled capture sessions (Runs 4-6).
-> All three mode bytes captured and verified. Device responds with SETTINGS_ACK.
+> All three mode bytes captured and verified. Device responds with ACK (0x23).
 
 ### 6.3 Enabling/Disabling Time Slots (param 0x1d)
 
@@ -405,58 +435,52 @@ allowing manual mode changes via 0x18 to persist indefinitely.
 
 ## 7. Advanced Topics
 
-### 7.1 Settings & Clock Sync (type 0x1a)
+### 7.1 Sync Packet (type 0x1a)
 
-The phone app sends SETTINGS packets every ~10 seconds as a clock sync.
-Bytes 7-10 carry the current time (day, hour, minute, second).
+The phone app sends SYNC packets every ~10 seconds. Bytes 7-10 carry the
+current time (day, hour, minute, second). Bytes 3-6 have been constant
+across all captures but may carry config state (see below).
 
-Structure: `a5b6 1a 06 06 1a 02 <day> <hour> <minute> <second> <checksum>`
+Structure: `a5b6 1a 06 06 <b5> <b6> <day> <hour> <minute> <second> <checksum>`
 
 | Offset | Size | Description |
 |--------|------|-------------|
 | 0-1 | 2 | Magic `a5b6` |
 | 2 | 1 | Type `0x1a` |
-| 3-5 | 3 | Header `06 06 1a` |
-| 6 | 1 | Always `0x02` in captures |
-| 7 | 1 | Day (of month) |
-| 8 | 1 | Hour (0-23) |
+| 3-4 | 2 | Header `06 06` |
+| 5 | 1 | Constant `0x1a` (= 26) in all captures — matches summer limit temp (26°C) |
+| 6 | 1 | Constant `0x02` in all captures — matches summer limit enabled (0x02=ON) |
+| 7 | 1 | Day of month |
+| 8 | 1 | Hour (0-23, UTC) |
 | 9 | 1 | Minute (0-59) |
 | 10 | 1 | Second (0-59) |
 | 11 | 1 | XOR checksum |
 
-**Example decoded packets:**
+**Clock sync (bytes 7-10) verified:** All 9 SYNC packets in a controlled
+capture session (2026-02-08) match the btsnoop timestamp to the second when
+interpreted as `[day, hour(UTC), minute, second]`.
 
 | Byte 7 | Byte 8 | Byte 9 | Byte 10 | Decoded time |
 |--------|--------|--------|---------|-----------------|
 | 0x07 | 0x10 (16) | 0x04 (4) | 0x0f (15) | Feb 7, 16:04:15 |
-| 0x07 | 0x11 (17) | 0x11 (17) | 0x17 (17) | Feb 7, 17:17:17 |
+| 0x08 | 0x0c (12) | 0x08 (8) | 0x0d (13) | Feb 8, 12:08:13 |
 | 0x08 | 0x0e (14) | 0x07 (7) | 0x30 (48) | Feb 8, 14:07:48 |
-| 0x09 | 0x09 (9) | 0x29 (41) | 0x20 (32) | Feb 9, 09:41:32 |
+| 0x08 | 0x11 (17) | 0x06 (6) | 0x14 (20) | Feb 8, 17:06:20 |
 
-Hours increase monotonically within each day; minutes and seconds stay in
-the 0-59 range. Byte 7 tracks the day-of-month.
+**Bytes 5-6 may carry config state.** In all captures, byte 5 = `0x1a` (26)
+and byte 6 = `0x02`. These match the current summer limit temperature (26°C)
+and summer limit enabled flag (0x02=ON). However, the summer limit has never
+been at a different value while a SYNC packet was being sent, so this
+interpretation is unverified.
 
-**`AIRFLOW_BYTES` in the codebase:**
+**Configuration changes use REQUEST, not SYNC.** A controlled capture
+(2026-02-08) of the phone changing preheat temperature, summer limit, and
+airflow mode showed that all changes used dedicated REQUEST params
+(0x1C, 0x17, 0x18). No SYNC packets were sent during config changes. The
+phone's SYNC packets continued their regular ~10s clock sync pattern
+unchanged.
 
-The library's `AIRFLOW_BYTES` constant contains three byte pairs used by
-`build_settings_packet()`:
-- LOW: `(0x19, 0x0A)` — also valid as minute=25, second=10
-- MEDIUM: `(0x28, 0x15)` — also valid as minute=40, second=21
-- HIGH: `(0x07, 0x30)` — also valid as minute=7, second=48
-
-These byte pairs are plausible clock sync timestamps and have not been
-confirmed as airflow configuration. The phone controls airflow mode via
-REQUEST param 0x18, not via SETTINGS.
-
-**Byte 7 observed values:**
-
-| Value range | Interpretation |
-|-------------|----------------|
-| 0x00, 0x02 | Unknown — may be low day-of-month values or a config sub-command |
-| 0x06-0x09 | Day-of-month (confirmed by correlation with calendar dates) |
-
-Whether the device firmware supports a config-mode SETTINGS variant
-(distinguished by low byte 7 values) is unverified.
+The device responds to SYNC packets with ACK (type 0x23).
 
 ### 7.2 Special Modes
 
@@ -470,7 +494,7 @@ Whether the device firmware supports a config-mode SETTINGS variant
 
 **What we DON'T know:**
 - Packet mapping for this mode in current captures
-- Whether this uses `REQUEST` (`0x10`) or `SETTINGS` (`0x1a`) path
+- Whether this uses `REQUEST` (`0x10`) or `SYNC` (`0x1a`) path
 - OFF behavior at protocol level
 
 #### Fixed Air Flow Rate
@@ -480,7 +504,7 @@ Whether the device firmware supports a config-mode SETTINGS variant
 
 **What we DON'T know:**
 - Packet mapping for this mode in current captures
-- Whether this uses `REQUEST` (`0x10`) or `SETTINGS` (`0x1a`) path
+- Whether this uses `REQUEST` (`0x10`) or `SYNC` (`0x1a`) path
 - OFF behavior and selected airflow behavior
 
 ### 7.3 Airflow Calculations
@@ -609,7 +633,7 @@ Value `0x0F` (all bits set) indicates all components healthy.
 | `0x01` | 182 bytes | Device State (config + Remote sensor) |
 | `0x02` | 182 bytes | Schedule (time slot configuration) |
 | `0x03` | 182 bytes | Probe Sensors (current probe readings) |
-| `0x23` | 182 bytes | Settings acknowledgment |
+| `0x23` | 182 bytes | Acknowledgment (response to SYNC, schedule write, FULL_DATA_Q) |
 | `0x40` | 55 bytes | Schedule Config Write |
 | `0x46` | 182 bytes | Schedule Config Response |
 | `0x47` | 26 bytes | Schedule Query |
@@ -647,16 +671,12 @@ Value `0x0F` (all bits set) indicates all components healthy.
 
 ### Open Questions
 
-**SETTINGS packet (0x1a):**
-- Bytes 7-10 carry clock sync (day, hour, minute, second). See §7.1.
-- The phone controls airflow via REQUEST param 0x18, not SETTINGS.
-- `AIRFLOW_BYTES` values are plausible clock sync timestamps, not confirmed
-  airflow configuration.
-- `build_settings_packet()` sends byte 7 = 0x00/0x02, which the phone does
-  not use. Whether the device firmware interprets low byte-7 values as a
-  config sub-command is unverified. The function is retained because
-  `set_summer_limit()` gets a SETTINGS_ACK response. A capture of the
-  phone's summer limit toggle would clarify the correct protocol.
+**SYNC packet (0x1a):**
+- Bytes 5-6 are constant (`0x1a`, `0x02`) across all captures. They match
+  the current summer limit temperature (26°C) and enabled flag (0x02=ON),
+  but this is unverified — the summer limit has never been at a different
+  value during a SYNC send. Need a capture with summer limit disabled or at
+  a different temperature to confirm.
 
 **Unknown REQUEST params:**
 - Param 0x29: the phone sends this heavily after connecting (~65 times with
@@ -689,7 +709,7 @@ Value `0x0F` (all bits set) indicates all components healthy.
 
 **Responses:**
 - 0x50 response structure (triggered by param 0x2c, constant payload, purpose unknown)
-- Settings Ack (0x23) — structure not documented
+- ACK (0x23) — structure not documented
 
 ## 10. References
 

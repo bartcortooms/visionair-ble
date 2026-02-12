@@ -9,7 +9,7 @@ Experiment design:
   2. Phase A: send ONLY 0x18=HIGH (no init) — this should NOT change power
      (confirmed by listen test). Monitor for 2 minutes.
   3. Reset: send 0x18=LOW. Wait 1 minute.
-  4. Phase B: send SETTINGS time sync + 0x18=HIGH. Monitor for 2 minutes.
+  4. Phase B: send SYNC time sync + 0x18=HIGH. Monitor for 2 minutes.
   5. Phase C: send 0x29 burst + 0x18=HIGH. Monitor for 2 minutes.
 
 If power changes in Phase B or C but not A, that identifies the enabling factor.
@@ -67,10 +67,10 @@ def read_power():
 
 
 def build_time_sync():
-    """Build a SETTINGS packet with current time (mimicking phone behavior)."""
+    """Build a SYNC packet with current time (mimicking phone behavior)."""
     now = datetime.now()
     payload = bytes([
-        PacketType.SETTINGS,
+        PacketType.SYNC,
         0x06,
         0x06,
         0x1A,       # summer limit temp (26°C) — constant config

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Extract all SETTINGS (0x1a) packets from a btsnoop log with timestamps.
+"""Extract all SYNC (0x1a) packets from a btsnoop log with timestamps.
 
-Prints raw hex bytes and decoded fields for each SETTINGS packet.
+Prints raw hex bytes and decoded fields for each SYNC packet.
 Bytes 7-10 are clock sync fields (day, hour, minute, second) in all
 observed phone app traffic. Config-mode semantics are unverified.
 """
@@ -30,10 +30,10 @@ def main():
 
     packets = find_vmi_packets(records)
 
-    # Filter to SETTINGS packets only
+    # Filter to SYNC packets only
     settings_pkts = [p for p in packets['raw_packets'] if p['type'] == 0x1a]
 
-    print(f"Found {len(settings_pkts)} SETTINGS packets\n")
+    print(f"Found {len(settings_pkts)} SYNC packets\n")
 
     # Header
     print(f"{'#':>3}  {'Timestamp':>26}  {'Full Hex':24}  "
@@ -76,10 +76,10 @@ def main():
               f"{b3:3d} {b4:3d} {b5:#04x} {b6:3d} {b7:3d} {b8:3d} {b9:#04x} {b10:#04x}  "
               f"{decoded}")
 
-    # Also show SETTINGS_ACK packets (0x23) for context
+    # Also show ACK packets (0x23) for context
     ack_pkts = [p for p in packets['raw_packets'] if p['type'] == 0x23]
     if ack_pkts:
-        print(f"\n\nSETTINGS_ACK packets (0x23): {len(ack_pkts)}")
+        print(f"\n\nACK packets (0x23): {len(ack_pkts)}")
         for i, pkt in enumerate(ack_pkts[:10]):
             print(f"  {i+1:3}  {pkt['timestamp']:>26}  {pkt['hex'][:40]}...")
 
